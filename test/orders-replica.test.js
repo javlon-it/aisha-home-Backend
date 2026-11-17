@@ -61,5 +61,16 @@ test('real replica-set transaction, idempotency, inventory and customer isolatio
    const deniedText=await denied.text();assert.equal(deniedText.includes(body.phone),false);assert.equal(deniedText.includes(body.name),false);
    assert.equal(await Order.countDocuments(),4);assert.equal((await Variant.findById(rollbackVariant._id)).stock,1);
   }finally{await new Promise(resolve=>limitedServer.close(resolve));}
+  assert.equal((await fetch(base+'/health/ready')).status,200);
+  await mongoose.disconnect();
+  assert.equal((await fetch(base+'/health/live')).status,200);
+  assert.equal((await fetch(base+'/health/ready')).status,503);
+  assert.equal((await fetch(base+'/catalog')).status,503);
+  assert.equal((await fetch(base+'/catalog/'+p._id)).status,503);
+  if(process.env.ATLAS_TEST==='1')await mongoose.connect(process.env.MONGODB_URI,{dbName:db,serverSelectionTimeoutMS:10000});
+  else await mongoose.connect('mongodb://127.0.0.1:27029/'+db+'?replicaSet=aishaOrdersTest',{serverSelectionTimeoutMS:5000});
+  assert.equal((await fetch(base+'/health/ready')).status,200);
+  assert.equal((await fetch(base+'/catalog')).status,200);
+  assert.equal((await fetch(base+'/catalog/'+p._id)).status,200);
  }finally{await new Promise(resolve=>server.close(resolve));await mongoose.disconnect()}
 });

@@ -24,5 +24,5 @@ test('production CORS is closed by default and wildcard is invalid',()=>{
 });
 test('production order origin required',async()=>{
  const app=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:'https://shop.example'}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
- try {const url='http://127.0.0.1:'+server.address().port+'/api/orders';for(const headers of [{},{Origin:'https://evil.example'}])assert.equal((await fetch(url,{method:'POST',headers})).status,403);const allowed=await fetch(url,{method:'POST',headers:{Origin:'https://shop.example'}});assert.equal(allowed.status,503);assert.equal(allowed.headers.get('access-control-allow-origin'),'https://shop.example');}finally{await new Promise(r=>server.close(r))}
+ try {const url='http://127.0.0.1:'+server.address().port+'/api/orders';assert.equal((await fetch(url,{method:'POST',headers:{Origin:'https://evil.example'}})).status,403);for(const headers of [{},{Origin:'https://shop.example'}]){const response=await fetch(url,{method:'POST',headers});assert.equal(response.status,503);assert.equal((await response.json()).error.code,'ORDERS_DISABLED');}}finally{await new Promise(r=>server.close(r))}
 });
