@@ -1,0 +1,4 @@
+# AISHA HOME V2 backend
+Express va MongoDB demo katalog va buyurtma API. Admin yozish API va autentifikatsiya mavjud emas. Buyurtma yaratish MongoDB replica set tranzaksiyasini talab qiladi; standalone da 503 qaytaradi. Narx va demo yetkazish serverda hisoblanadi; buyurtmalar HttpOnly cookie sessiyasiga bog‘lanadi. Yetkazish 15 000 so‘m, pickup 0 — faqat demo. To‘lov yoki buyurtmani bekor qilish hali mavjud emas. Haqiqiy savdo uchun internetga deploy qilmang.
+
+Mahalliy ishga tushirish: yuqoridagi README.md. Testlar: npm.cmd test; real replica set integratsiyasini ORDER_REPLICA_TEST=1, standalone testini ORDER_STANDALONE_TEST=1 bilan alohida mahalliy test serverlarida bajaring.
