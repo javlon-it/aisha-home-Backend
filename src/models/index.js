@@ -17,3 +17,12 @@ const crmLink = schema({ kind: { type: String, enum: ['order', 'inquiry'] }, ent
 crmLink.index({ kind: 1, entityId: 1 }, { unique: true });
 export const Product = mongoose.model('Product', product), Variant = mongoose.model('Variant', variant), Customer = mongoose.model('Customer', customer), Order = mongoose.model('Order', order), QuickInquiry = mongoose.model('QuickInquiry', inquiry), CrmNote = mongoose.model('CrmNote', note), CrmTask = mongoose.model('CrmTask', task), Shipping = mongoose.model('Shipping', shipping), Branch = mongoose.model('Branch', branch), CrmLink = mongoose.model('CrmLink', crmLink);
 
+
+const adminAccount = schema({ singleton: {type:String, required:true, unique:true}, username:{type:String,required:true}, passwordHash:{type:String,required:true}, role:{type:String,enum:['admin'],required:true} });
+const adminSession = schema({ tokenHash:{type:String,required:true,unique:true}, accountId:{type:Schema.Types.ObjectId,ref:'AdminAccount',required:true}, expiresAt:{type:Date,required:true} });
+adminSession.index({expiresAt:1},{expireAfterSeconds:0});
+const adminLoginLimit = schema({ key:{type:String,required:true,unique:true}, count:{type:Number,required:true}, resetAt:{type:Date,required:true} });
+adminLoginLimit.index({resetAt:1},{expireAfterSeconds:0});
+const adminProxyNonce = schema({ nonce:{type:String,required:true,unique:true}, expiresAt:{type:Date,required:true} });
+adminProxyNonce.index({expiresAt:1},{expireAfterSeconds:0});
+export const AdminAccount=mongoose.model('AdminAccount',adminAccount), AdminSession=mongoose.model('AdminSession',adminSession), AdminLoginLimit=mongoose.model('AdminLoginLimit',adminLoginLimit), AdminProxyNonce=mongoose.model('AdminProxyNonce',adminProxyNonce);

@@ -3,6 +3,7 @@ import cors from 'cors';
 import {healthRouter} from './routes/health.js';
 import {catalogRouter} from './routes/catalog.js';
 import {ordersRouter} from './routes/orders.js';
+import {createAdminRouter} from './routes/admin.js';
 import {errorHandler,notFound} from './middlewares/errors.js';
 import {createOrderRateLimit} from './middlewares/order-rate-limit.js';
 export function allowedOrigins(env=process.env){
@@ -18,5 +19,5 @@ export function createApp(env=process.env){
  app.use('/api/orders',(req,res,next)=>{if(app.locals.production&&req.method==='POST')return res.status(503).json({error:{code:'ORDERS_DISABLED',message:'Buyurtma berish vaqtincha mavjud emas.'}});next()});
  app.use((req,res,next)=>{if(app.locals.production&&req.method==='POST'&&req.path.replace(/\/$/,'').toLowerCase()==='/api/orders'&&!origins.has(req.get('Origin')))return res.status(403).json({error:{code:'ORIGIN_REQUIRED',message:'So‘rov manbasi ruxsat etilmagan.'}});next()});
  app.post('/api/orders',createOrderRateLimit(env));
- app.use(express.json({limit:'64kb'}));app.use('/api/health',healthRouter);app.use('/api/catalog',catalogRouter);app.use('/api/orders',ordersRouter);app.use(notFound);app.use(errorHandler);return app;
+ app.use(express.json({limit:'64kb',verify:(req,res,buf)=>{if(req.path.startsWith('/api/admin'))req.adminRawBody=Buffer.from(buf)}}));app.use('/api/admin',createAdminRouter({origins,production:app.locals.production,env}));app.use('/api/health',healthRouter);app.use('/api/catalog',catalogRouter);app.use('/api/orders',ordersRouter);app.use(notFound);app.use(errorHandler);return app;
 }
