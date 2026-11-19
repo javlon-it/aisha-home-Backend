@@ -6,6 +6,8 @@ Backend muhitida `SUPABASE_URL`, `SUPABASE_SECRET_KEY` va `SUPABASE_STORAGE_BUCK
 
 Server tinglashni boshlagach, `products` bucketiga faqat o‘qish so‘rovi bir marta yuboriladi. Natija `Supabase connection: PASS` yoki `Supabase connection: FAIL`; 10 soniyalik kutishdan so‘ng ham javob bo‘lmasa FAIL qayd etiladi. Tekshiruv server ishga tushishini to‘xtatmaydi va yozish ruxsatini tekshirmaydi.
 
+FAIL logidagi xavfsiz sabab kodlari: `CONFIG_INVALID` — konfiguratsiya yetishmaydi yoki noto‘g‘ri; `AUTH_OR_PERMISSION` — HTTP 401/403, autentifikatsiya yoki ruxsat; `BUCKET_OR_ENDPOINT_NOT_FOUND` — HTTP 404; `HTTP_ERROR` — boshqa HTTP xato; `TIMEOUT` — javob kutilgan vaqtda kelmadi; `NETWORK_OR_CLIENT_ERROR` — tarmoq yoki klient xatosi; `INVALID_RESPONSE` — kutilmagan javob. Status mavjud bo‘lsa faqat raqam yoziladi; secretlar va server qaytargan matn logga yozilmaydi.
+
 Ushbu muhit sozlangan backendda `node scripts/check-supabase.js` faqat `products` bucket metama’lumotini o‘qib, PASS yoki FAIL qaytaradi. U fayl yaratmaydi, yuklamaydi yoki o‘chirmaydi; PASS yozish ruxsati yoki bucket xavfsizlik siyosatini tasdiqlamaydi.
 
 ## Ishlash holati va Render

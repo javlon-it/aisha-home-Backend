@@ -24,9 +24,18 @@ test('bucket check uses a read-only GET and handles failures without exposing de
 });
 
 test('startup check logs one safe result on success, failure and timeout',async()=>{
- for(const [client,expected] of [[{storage:{getBucket:async()=>({data:{id:'products'}})}},'Supabase connection: PASS'],[null,'Supabase connection: FAIL'],[{storage:{getBucket:async()=>{throw Error('private synthetic secret')}}},'Supabase connection: FAIL'],[{storage:{getBucket:()=>new Promise(()=>{})}},'Supabase connection: FAIL']]){
+ for(const [client,expected] of [[{storage:{getBucket:async()=>({data:{id:'products'}})}},'Supabase connection: PASS'],[null,'Supabase connection: FAIL (CONFIG_INVALID)'],[{storage:{getBucket:async()=>{throw Error('private synthetic secret')}}},'Supabase connection: FAIL (NETWORK_OR_CLIENT_ERROR)'],[{storage:{getBucket:()=>new Promise(()=>{})}},'Supabase connection: FAIL (TIMEOUT)'],[{storage:{getBucket:async()=>({data:{id:'other'}})}},'Supabase connection: FAIL (INVALID_RESPONSE)']]){
   const logs=[];await reportSupabaseConnection(client,{timeoutMs:15,log:message=>logs.push(message)});assert.deepEqual(logs,[expected]);
  }
+});
+
+test('actual SDK HTTP errors produce only safe status and classification',async()=>{
+ const original=globalThis.fetch;
+ try{for(const [status,reason] of [[401,'AUTH_OR_PERMISSION'],[403,'AUTH_OR_PERMISSION'],[404,'BUCKET_OR_ENDPOINT_NOT_FOUND'],[500,'HTTP_ERROR']]){
+  globalThis.fetch=async()=>new Response(JSON.stringify({message:'private synthetic secret'}),{status,headers:{'content-type':'application/json'}});
+  const logs=[];await reportSupabaseConnection(createSupabaseClient(valid),{log:message=>logs.push(message)});
+  assert.deepEqual(logs,[`Supabase connection: FAIL (${reason}, HTTP ${status})`]);
+ }}finally{globalThis.fetch=original}
 });
 
 test('startup listens before the Supabase check and does not await it',()=>{
