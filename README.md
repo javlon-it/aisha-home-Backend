@@ -1,5 +1,13 @@
 # AISHA HOME V2 backend
 
+## Supabase Storage konfiguratsiyasi
+
+Backend muhitida `SUPABASE_URL`, `SUPABASE_SECRET_KEY` va `SUPABASE_STORAGE_BUCKET=products` sozlanadi. Secret kalit faqat backendda saqlansin. Kerakli qiymatlar bo‘lmasa yoki konfiguratsiya noto‘g‘ri bo‘lsa, storage klienti o‘chiriladi, qolgan API ishlashda davom etadi. Klient tayyorlanishi Supabase ulanishi yoki bucket mavjudligini tasdiqlamaydi. Rasm yuklash, format va hajm tekshiruvi hali yaratilmagan. `@supabase/supabase-js` uchun Node.js 22 yoki undan yangi versiya talab qilinadi.
+
+Server tinglashni boshlagach, `products` bucketiga faqat o‘qish so‘rovi bir marta yuboriladi. Natija `Supabase connection: PASS` yoki `Supabase connection: FAIL`; 10 soniyalik kutishdan so‘ng ham javob bo‘lmasa FAIL qayd etiladi. Tekshiruv server ishga tushishini to‘xtatmaydi va yozish ruxsatini tekshirmaydi.
+
+Ushbu muhit sozlangan backendda `node scripts/check-supabase.js` faqat `products` bucket metama’lumotini o‘qib, PASS yoki FAIL qaytaradi. U fayl yaratmaydi, yuklamaydi yoki o‘chirmaydi; PASS yozish ruxsati yoki bucket xavfsizlik siyosatini tasdiqlamaydi.
+
 ## Ishlash holati va Render
 
 `GET /api/health/live` server ishlayotganida 200 qaytaradi; Render Health Check Path uchun shu yo‘ldan foydalaning. `GET /api/health/ready` MongoDB ulanganida 200, ulanmaganida 503 qaytaradi. Eski `/api/health` moslik uchun saqlangan. Readiness ulanish holatini bildiradi, yozish huquqi yoki tranzaksiyalarni tekshirmaydi. Server boshlang‘ich ulanish muvaffaqiyatsiz bo‘lsa 30 soniyada qayta urinadi; ulanish keyin uzilsa MongoDB driver qayta ulanishga harakat qiladi. Productionda `POST /api/orders` doim 503 bilan o‘chirilgan. Lokal test rejimida buyurtma oqimi o‘zgarmagan.
