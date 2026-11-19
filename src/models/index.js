@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 const { Schema } = mongoose;
 const schema = (shape, opts = {}) => new Schema(shape, { timestamps: true, ...opts });
-const product = schema({ name: { type: String, required: true }, category: String, description: String, imageUrl: String, archived: { type: Boolean, default: false } });
-const variant = schema({ productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true }, sku: { type: String, required: true, unique: true }, color: { type: String, required: true }, size: { type: String, required: true }, material: String, gsm: String, price: { type: Number, required: true, min: 0 }, stock: { type: Number, required: true, min: 0 } });
+const product = schema({ name: { type: String, required: true }, category: String, description: String, imageUrl: String, imageKey:String, archived: { type: Boolean, default: false } });
+const variant = schema({ productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true }, sku: { type: String, required: true, unique: true }, color: { type: String, required: true }, size: { type: String, required: true }, material: String, gsm: String, price: { type: Number, required: true, min: 0 }, stock: { type: Number, required: true, min: 0 }, averageCost:{type:Number,default:null,min:0} });
 variant.index({ productId: 1, color: 1, size: 1 }, { unique: true });
 const customer = schema({ name: { type: String, required: true }, phone: { type: String, required: true } });
 const order = schema({ ownerHash: { type: String, required: true }, requestId: { type: String, required: true }, requestHash: String, customerSnapshot: Schema.Types.Mixed, subtotal: Number, status: String, items: [{ variantId: Schema.Types.ObjectId, name: String, color: String, size: String, price: Number, quantity: Number }], shippingSnapshot: Schema.Types.Mixed, total: Number, inventoryReserved: Boolean, paid: Boolean });
@@ -26,3 +26,5 @@ adminLoginLimit.index({resetAt:1},{expireAfterSeconds:0});
 const adminProxyNonce = schema({ nonce:{type:String,required:true,unique:true}, expiresAt:{type:Date,required:true} });
 adminProxyNonce.index({expiresAt:1},{expireAfterSeconds:0});
 export const AdminAccount=mongoose.model('AdminAccount',adminAccount), AdminSession=mongoose.model('AdminSession',adminSession), AdminLoginLimit=mongoose.model('AdminLoginLimit',adminLoginLimit), AdminProxyNonce=mongoose.model('AdminProxyNonce',adminProxyNonce);
+const inventoryReceipt=schema({requestId:{type:String,required:true,unique:true},requestHash:{type:String,required:true},variantId:{type:Schema.Types.ObjectId,ref:'Variant',required:true},quantity:{type:Number,required:true},unitCost:{type:Number,required:true},receivedAt:{type:Date,required:true},openingStock:Number,openingUnitCost:Number,averageCostAfter:{type:Number,required:true}});
+export const InventoryReceipt=mongoose.model('InventoryReceipt',inventoryReceipt);

@@ -4,6 +4,7 @@ import {promisify} from 'node:util';
 import {isIP} from 'node:net';
 import mongoose from 'mongoose';
 import {AdminAccount,AdminSession,AdminLoginLimit,AdminProxyNonce} from '../models/index.js';
+import {adminProductsRouter} from './admin-products.js';
 
 const scrypt=promisify(scryptCallback);
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -74,5 +75,6 @@ export function createAdminRouter({origins,production,env={}}){
  r.use(async(req,res,next)=>{try{const raw=token(req);if(!raw)return fail(res,401,'UNAUTHENTICATED','Avval tizimga kiring.');const session=await AdminSession.findOne({tokenHash:hash(raw),expiresAt:{$gt:new Date()}}).lean();if(!session)return fail(res,401,'UNAUTHENTICATED','Sessiya tugagan yoki bekor qilingan.');const account=await AdminAccount.findById(session.accountId).lean();if(!account||account.role!=='admin')return fail(res,403,'FORBIDDEN','Ruxsat mavjud emas.');req.adminSession=session;next()}catch(e){next(e)}});
  r.get('/session',(req,res)=>res.json({authenticated:true,role:'admin',expiresAt:req.adminSession.expiresAt}));
  r.post('/logout',async(req,res,next)=>{try{await AdminSession.deleteOne({_id:req.adminSession._id});res.clearCookie('aisha_admin_session',cookie);res.json({authenticated:false})}catch(e){next(e)}});
+ r.use(adminProductsRouter);
  return r;
 }

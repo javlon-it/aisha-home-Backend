@@ -7,6 +7,8 @@ import {createAdminRouter} from './routes/admin.js';
 import {errorHandler,notFound} from './middlewares/errors.js';
 import {createOrderRateLimit} from './middlewares/order-rate-limit.js';
 import {createProductStorage} from './config/supabase.js';
+import {imageUploadGuard} from './middlewares/image-upload-guard.js';
+import {createHash} from 'node:crypto';
 export function allowedOrigins(env=process.env){
  const raw=env.CORS_ALLOWED_ORIGINS ?? (env.NODE_ENV==='production'?'':'http://127.0.0.1:5173,http://localhost:5173');
  return raw.split(',').map(x=>x.trim()).filter(Boolean).map(value=>{let url;try{url=new URL(value)}catch{throw new Error('CORS_ALLOWED_ORIGINS noto‘g‘ri')}if(!['http:','https:'].includes(url.protocol)||(env.NODE_ENV==='production'&&url.protocol!=='https:')||value!==url.origin||url.username||url.password||value==='*')throw new Error('CORS_ALLOWED_ORIGINS faqat aniq originlardan iborat bo‘lsin');return value});
@@ -21,5 +23,7 @@ export function createApp(env=process.env){
  app.use('/api/orders',(req,res,next)=>{if(app.locals.production&&req.method==='POST')return res.status(503).json({error:{code:'ORDERS_DISABLED',message:'Buyurtma berish vaqtincha mavjud emas.'}});next()});
  app.use((req,res,next)=>{if(app.locals.production&&req.method==='POST'&&req.path.replace(/\/$/,'').toLowerCase()==='/api/orders'&&!origins.has(req.get('Origin')))return res.status(403).json({error:{code:'ORIGIN_REQUIRED',message:'So‘rov manbasi ruxsat etilmagan.'}});next()});
  app.post('/api/orders',createOrderRateLimit(env));
+ app.use('/api/admin/products/:productId/image',imageUploadGuard(env,origins));
+ app.use('/api/admin',express.raw({type:'application/octet-stream',limit:'4mb',verify:(req,res,buf)=>{if(req.imageExpectedHash&&createHash('sha256').update(buf).digest('hex')!==req.imageExpectedHash)throw Error('Invalid image signature');req.adminRawBody=Buffer.from(buf)}}));
  app.use(express.json({limit:'64kb',verify:(req,res,buf)=>{if(req.path.startsWith('/api/admin'))req.adminRawBody=Buffer.from(buf)}}));app.use('/api/admin',createAdminRouter({origins,production:app.locals.production,env}));app.use('/api/health',healthRouter);app.use('/api/catalog',catalogRouter);app.use('/api/orders',ordersRouter);app.use(notFound);app.use(errorHandler);return app;
 }

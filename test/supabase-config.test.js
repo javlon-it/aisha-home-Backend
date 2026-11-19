@@ -40,8 +40,19 @@ test('actual SDK HTTP errors produce only safe status and classification',async(
 
 test('startup listens before the Supabase check and does not await it',()=>{
  const events=[];const source=readFileSync(new URL('../server.js',import.meta.url),'utf8').split(/\r?\n/).filter(line=>!line.startsWith('import ')).join('\n');
- const context={process:{env:{PORT:'5000'}},console:{log:()=>events.push('log'),error:()=>{}},setTimeout,connectDatabase:async()=>{},configureCloudinary:()=>{},createSupabaseClient:()=>({}),reportSupabaseConnection:()=>{events.push('check');return new Promise(()=>{})},createApp:()=>({listen:(port,host,callback)=>{events.push('listen');callback();events.push('listen-returned')}})};
+ const context={process:{env:{PORT:'5000'}},console:{log:()=>events.push('log'),error:()=>{}},setTimeout,connectDatabase:async()=>{},createSupabaseClient:()=>({}),reportSupabaseConnection:()=>{events.push('check');return new Promise(()=>{})},createApp:()=>({listen:(port,host,callback)=>{events.push('listen');callback();events.push('listen-returned')}})};
  runInNewContext(source,context);assert.deepEqual(events,['listen','log','check','listen-returned']);
+});
+
+test('synthetic Storage HTTP responses exercise SDK upload and removal',async()=>{
+ const original=globalThis.fetch,calls=[];
+ try{
+  globalThis.fetch=async(url,options)=>{calls.push({path:new URL(String(url)).pathname,method:options.method});return new Response(options.method==='DELETE'?'[]':'{"Key":"products/synthetic.png"}',{status:200,headers:{'content-type':'application/json'}})};
+  const storage=createProductStorage(valid);const upload=await storage.upload('synthetic.png',Buffer.from('synthetic'),{contentType:'image/png',upsert:false});assert.equal(upload.error,null);
+  assert.match(storage.getPublicUrl('synthetic.png').data.publicUrl,/\/storage\/v1\/object\/public\/products\/synthetic\.png$/);
+  const removed=await storage.remove(['synthetic.png']);assert.equal(removed.error,null);
+  assert.deepEqual(calls,[{path:'/storage/v1/object/products/synthetic.png',method:'POST'},{path:'/storage/v1/object/products',method:'DELETE'}]);
+ }finally{globalThis.fetch=original}
 });
 
 test('missing, invalid or unavailable storage does not block existing application routes',async()=>{
