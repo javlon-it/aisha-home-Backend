@@ -12,7 +12,7 @@ test('admin security with isolated MongoDB and signed synthetic proxy',{skip:!ur
  const parsed=new URL(uri);assert.equal(parsed.protocol,'mongodb:');assert.equal(parsed.hostname,'127.0.0.1');assert.match(parsed.pathname,/^\/aisha_admin_test_[a-z0-9]+$/);assert.equal(parsed.search,'');
  await mongoose.connect(uri,{serverSelectionTimeoutMS:5000});assert.equal((await mongoose.connection.db.listCollections().toArray()).length,0,'Synthetic database must be empty');
  await Promise.all([AdminAccount.init(),AdminSession.init(),AdminLoginLimit.init(),AdminProxyNonce.init()]);
- const username='synthetic-admin',password='synthetic-password-8427',secret=randomBytes(32).toString('hex');
+ const username='synthetic-admin',password='a7b8c9',secret=randomBytes(32).toString('hex');
  const stored=await hashPassword(password);assert.match(stored,/^scrypt\$131072\$8\$1\$/);await AdminAccount.create({singleton:'primary',username,passwordHash:stored,role:'admin'});
  const origin='https://admin.example',server=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:origin,ADMIN_PROXY_SECRET:secret}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
  function signed(path,{method='GET',ip='192.0.2.1',cookie='',body,header=true,requestOrigin=origin,nonce=randomBytes(16).toString('hex'),forwarded}={}){
