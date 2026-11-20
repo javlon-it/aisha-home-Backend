@@ -13,6 +13,8 @@ services:
         sync: false
       - key: MONGODB_URI
         sync: false
+      - key: PRODUCTION_ORDERS_ENABLED
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY

@@ -16,11 +16,12 @@ export function allowedOrigins(env=process.env){
 export function createApp(env=process.env){
  const app=express(),origins=new Set(allowedOrigins(env));app.disable('x-powered-by');
  app.locals.production=env.NODE_ENV==='production';
+ app.locals.ordersEnabled=!app.locals.production||env.PRODUCTION_ORDERS_ENABLED==='true';
  app.locals.productStorage=createProductStorage(env);
  app.set('trust proxy',false);
  app.use((req,res,next)=>{const origin=req.get('Origin');if(origin&&!origins.has(origin))return res.status(403).json({error:{code:'CORS_ORIGIN_DENIED',message:'Origin ruxsat etilmagan'}});next()});
  app.use(cors({origin:(origin,done)=>done(null,!!origin&&origins.has(origin)),credentials:true}));
- app.use('/api/orders',(req,res,next)=>{if(app.locals.production&&req.method==='POST')return res.status(503).json({error:{code:'ORDERS_DISABLED',message:'Buyurtma berish vaqtincha mavjud emas.'}});next()});
+ app.use('/api/orders',(req,res,next)=>{if(req.method==='POST'&&!app.locals.ordersEnabled)return res.status(503).json({error:{code:'ORDERS_DISABLED',message:'Buyurtma berish vaqtincha mavjud emas.'}});next()});
  app.use((req,res,next)=>{if(app.locals.production&&req.method==='POST'&&req.path.replace(/\/$/,'').toLowerCase()==='/api/orders'&&!origins.has(req.get('Origin')))return res.status(403).json({error:{code:'ORIGIN_REQUIRED',message:'So‘rov manbasi ruxsat etilmagan.'}});next()});
  app.post('/api/orders',createOrderRateLimit(env));
  app.use('/api/admin/products/:productId/image',imageUploadGuard(env,origins));

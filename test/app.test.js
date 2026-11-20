@@ -26,3 +26,11 @@ test('production order origin required',async()=>{
  const app=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:'https://shop.example'}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
  try {const url='http://127.0.0.1:'+server.address().port+'/api/orders';assert.equal((await fetch(url,{method:'POST',headers:{Origin:'https://evil.example'}})).status,403);for(const headers of [{},{Origin:'https://shop.example'}]){const response=await fetch(url,{method:'POST',headers});assert.equal(response.status,503);assert.equal((await response.json()).error.code,'ORDERS_DISABLED');}}finally{await new Promise(r=>server.close(r))}
 });
+test('production orders require an exact fail-closed enable flag',async()=>{
+ for(const value of [undefined,'false','TRUE','1']){
+  const app=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:'https://shop.example',...(value===undefined?{}:{PRODUCTION_ORDERS_ENABLED:value})}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+  try{const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/orders',{method:'POST',headers:{Origin:'https://shop.example'}});assert.equal(response.status,503);assert.equal((await response.json()).error.code,'ORDERS_DISABLED')}finally{await new Promise(r=>server.close(r))}
+ }
+ const app=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:'https://shop.example',PRODUCTION_ORDERS_ENABLED:'true'}),server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));
+ try{const response=await fetch('http://127.0.0.1:'+server.address().port+'/api/orders',{method:'POST',headers:{Origin:'https://shop.example','Content-Type':'application/json'},body:'{}'});assert.notEqual((await response.json()).error.code,'ORDERS_DISABLED')}finally{await new Promise(r=>server.close(r))}
+});
