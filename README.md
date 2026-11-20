@@ -48,3 +48,7 @@ Mijoz `phoneKey` maydoni uchun sparse unique indeks va savdo kaliti uchun unique
 Har bir qaytarishda sabab, server vaqti, mijoz, savdo satrlari va tarixiy tannarx saqlanadi. Sotishga yaroqli mahsulot omborga qo‘shiladi; yaroqsiz mahsulot faqat tarixga yoziladi. Qaytarish rekordi, sotilgan miqdor qaytgan ko‘rsatkichi va ombor o‘zgarishi bitta MongoDB tranzaksiyasida yoziladi. Tranzaksiya/replica set ishlamasa, hech biri saqlanmaydi. Tizim qaytariladigan summani qayd etadi, lekin pulni karta yoki naqd kanalida o‘zi jo‘natmaydi. Sintetik integratsiyalar `ADMIN_RETURN_TEST_MONGO` (replica set) va `ADMIN_RETURN_STANDALONE_MONGO` (standalone) bilan ishlaydi.
 
 Mahalliy ishga tushirish: yuqoridagi README.md. Testlar: npm.cmd test; real replica set integratsiyasini ORDER_REPLICA_TEST=1, standalone testini ORDER_STANDALONE_TEST=1 bilan alohida mahalliy test serverlarida bajaring.
+
+## CRM (9-bosqich)
+
+Admin CRM mijozlarni ism/telefon bo‘yicha qidiradi va profilida internet buyurtmalari, jismoniy savdolar, xarid qilingan mahsulotlar, jami xaridlar, qaytarishlar hamda admin izohlarini ko‘rsatadi. CRM API admin sessiyasi bilan himoyalangan.

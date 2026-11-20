@@ -1,7 +1,8 @@
 import {Router} from 'express';
 import mongoose from 'mongoose';
 import {createHash,randomBytes} from 'node:crypto';
-import {Order,Product,Variant} from '../models/index.js';
+import {Customer,Order,Product,Variant} from '../models/index.js';
+import {legacyPhonePattern,normalizePhone} from '../utils/phone.js';
 
 export const ordersRouter=Router();
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -18,12 +19,13 @@ function clean(body){
  if(!body || typeof body!=='object' || !Array.isArray(body.items) || body.items.length<1 || body.items.length>50)throw Error('Mahsulotlar ro‘yxatini tekshiring.');
  const name=String(body.name||'').trim(),phone=String(body.phone||'').trim(),method=body.method,address=String(body.address||'').trim();
  if(name.length<2||name.length>100||!/^\+?[0-9 ()-]{9,20}$/.test(phone))throw Error('Ism va telefon raqamini to‘g‘ri kiriting.');
+ const phoneKey=normalizePhone(phone);if(!phoneKey)throw Error('Telefon raqamini to‘g‘ri kiriting.');
  if(!['delivery','pickup'].includes(method))throw Error('Qabul qilish usulini tanlang.');
  if(method==='delivery'&&(address.length<5||address.length>300))throw Error('To‘liq yetkazish manzilini kiriting.');
  if(body.consent!==true)throw Error('Ma’lumotlarni qayta ishlashga rozilikni belgilang.');
  const ids=new Set();
  const items=body.items.map(item=>{if(!validId(item.variantId)||!Number.isSafeInteger(item.expectedPrice)||item.expectedPrice<0||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>100||ids.has(item.variantId))throw Error('Mahsulot miqdori yoki varianti noto‘g‘ri.');ids.add(item.variantId);return {variantId:item.variantId,quantity:item.quantity,expectedPrice:item.expectedPrice}});
- return {name,phone,method,address:method==='delivery'?address:'',items};
+ return {name,phone,phoneKey,method,address:method==='delivery'?address:'',items};
 }
 ordersRouter.use((req,res,next)=>{if(mongoose.connection.readyState!==1)return fail(res,503,'DATABASE_UNAVAILABLE','Ma’lumotlar bazasiga ulanib bo‘lmadi.');next()});
 ordersRouter.get('/session',(req,res)=>{owner(req,res);res.set('Cache-Control','no-store').json({ready:true,demo:true})});
@@ -33,7 +35,7 @@ ordersRouter.post('/',async(req,res,next)=>{
  let data;try{data=clean(req.body)}catch(e){return fail(res,400,'INVALID_ORDER',e.message)}
  const key=req.get('Idempotency-Key');if(!key||!/^[a-zA-Z0-9-]{16,100}$/.test(key))return fail(res,400,'IDEMPOTENCY_REQUIRED','Buyurtma kaliti noto‘g‘ri.');
  const ownerHash=owner(req,res),requestHash=hash(JSON.stringify(data));
- await Order.init();
+ await Promise.all([Order.init(),Customer.init()]);
  const existing=await Order.findOne({ownerHash,requestId:key}).lean().catch(()=>null);
  if(existing){if(existing.requestHash!==requestHash)return fail(res,409,'KEY_CONFLICT','Bu kalit boshqa buyurtmada ishlatilgan.');return res.status(200).json({orderId:String(existing._id),demo:true})}
  const session=await mongoose.startSession();let result;
@@ -57,7 +59,9 @@ ordersRouter.post('/',async(req,res,next)=>{
    }
    const fee=data.method==='delivery'?15000:0;
    if(!Number.isSafeInteger(subtotal+fee))throw Error('PRICE');
-   [result]=await Order.create([{ownerHash,requestId:key,requestHash,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,demo:true},subtotal,total:subtotal+fee,inventoryReserved:true,paid:false}],{session});
+   let customer=await Customer.findOne({phoneKey:data.phoneKey}).session(session);
+   if(!customer){const legacy=await Customer.find({phoneKey:{$exists:false},phone:legacyPhonePattern(data.phoneKey)}).limit(2).session(session);if(legacy.length>1)throw Error('CUSTOMER_AMBIGUOUS');if(legacy.length===1)customer=legacy[0];else [customer]=await Customer.create([{name:data.name,phone:'+'+data.phoneKey,phoneKey:data.phoneKey}],{session})}
+   [result]=await Order.create([{ownerHash,requestId:key,requestHash,customerId:customer._id,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,demo:true},subtotal,total:subtotal+fee,inventoryReserved:true,paid:false}],{session});
   });
   return res.status(201).json({orderId:String(result._id),demo:true});
  }catch(e){
@@ -65,6 +69,7 @@ ordersRouter.post('/',async(req,res,next)=>{
   if(e.message==='PRICE_CHANGED')return fail(res,409,'PRICE_CHANGED','Mahsulot narxi o‘zgargan. Uni savatdan olib tashlab, katalogdan qayta qo‘shing.');
   if(e.message==='STOCK')return fail(res,409,'STOCK_UNAVAILABLE','Mahsulot tugagan yoki miqdor yetarli emas. Savatni yangilang.');
   if(e.message==='KEY_CONFLICT')return fail(res,409,'KEY_CONFLICT','Bu kalit boshqa buyurtmada ishlatilgan.');
+  if(e.message==='CUSTOMER_AMBIGUOUS')return fail(res,409,'CUSTOMER_AMBIGUOUS','Telefon raqamiga bir nechta eski mijoz mos keldi. Buyurtmani qayta tekshiring.');
   if(e.code===20||/Transaction numbers are only allowed|replica set/i.test(e.message))return fail(res,503,'TRANSACTIONS_UNAVAILABLE','Buyurtma berish vaqtincha mavjud emas: ma’lumotlar bazasida tranzaksiyalar yoqilmagan.');
   next(e);
  }finally{await session.endSession()}

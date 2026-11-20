@@ -5,7 +5,7 @@ import {randomUUID} from 'node:crypto';
 import dns from 'node:dns';
 import 'dotenv/config';
 import {createApp} from '../src/app.js';
-import {Product,Variant,Order} from '../src/models/index.js';
+import {Product,Variant,Order,Customer} from '../src/models/index.js';
 
 test('real replica-set transaction, idempotency, inventory and customer isolation', {skip:process.env.ORDER_REPLICA_TEST!=='1'}, async t=>{
  const db='aisha_order_test_'+Date.now()+'_'+Math.floor(Math.random()*1000000);
@@ -33,7 +33,7 @@ test('real replica-set transaction, idempotency, inventory and customer isolatio
   const stale=await request({...body,items:[{variantId:String(v._id),quantity:1,expectedPrice:1}]},randomUUID());assert.equal(stale.status,409);assert.equal((await stale.json()).error.code,'PRICE_CHANGED');assert.equal((await Variant.findById(v._id)).stock,2);
   const key=randomUUID();const [a,b]=await Promise.all([request(body,key),request(body,key)]);
   assert.ok([200,201].includes(a.status));assert.ok([200,201].includes(b.status));const x=await a.json(),y=await b.json();assert.equal(x.orderId,y.orderId);
-  assert.equal((await Variant.findById(v._id)).stock,1);assert.equal(await Order.countDocuments(),1);
+  assert.equal((await Variant.findById(v._id)).stock,1);assert.equal(await Order.countDocuments(),1);assert.equal(await Customer.countDocuments(),1);assert.ok((await Order.findById(x.orderId)).customerId);
   const conflict=await request({...body,name:'Other User'},key);assert.equal(conflict.status,409);
   const other=await fetch(base+'/orders/'+x.orderId);assert.equal(other.status,404);
   const mine=await fetch(base+'/orders/'+x.orderId,{headers:{cookie}});assert.equal(mine.status,200);const saved=(await mine.json()).order;assert.equal(saved.total,39000);assert.equal(saved.shippingSnapshot.fee,0);

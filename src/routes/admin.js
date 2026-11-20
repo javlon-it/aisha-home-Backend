@@ -7,6 +7,7 @@ import {AdminAccount,AdminSession,AdminLoginLimit,AdminProxyNonce} from '../mode
 import {adminProductsRouter} from './admin-products.js';
 import {adminOrdersRouter} from './admin-orders.js';
 import {adminSalesRouter} from './admin-sales.js';
+import {adminCrmRouter} from './admin-crm.js';
 
 const scrypt=promisify(scryptCallback);
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -80,5 +81,6 @@ export function createAdminRouter({origins,production,env={}}){
  r.use(adminProductsRouter);
  r.use(adminOrdersRouter);
  r.use(adminSalesRouter);
+ r.use(adminCrmRouter);
  return r;
 }
