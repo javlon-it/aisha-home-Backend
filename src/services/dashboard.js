@@ -65,13 +65,13 @@ async function onlineTotals(range) {
   { $match: { ...matchRange(range), status: 'Yakunlangan' } },
   { $addFields: { costComplete: costCompleteExpr, knownCost: onlineCostExpr } },
   { $group: {
-   _id: null, orders: { $sum: 1 }, productSales: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } },
+   _id: null, orders: { $sum: 1 }, productSales: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } }, discounts: { $sum: { $cond: [{ $isNumber: '$discountTotal' }, '$discountTotal', 0] } },
    deliveryFees: { $sum: { $cond: [{ $isNumber: '$shippingSnapshot.fee' }, '$shippingSnapshot.fee', 0] } },
    costOfGoodsSold: { $sum: '$knownCost' }, missingCostOrders: { $sum: { $cond: ['$costComplete', 0, 1] } },
    unlinkedCustomers: { $sum: { $cond: [{ $in: [{ $type: '$customerId' }, ['missing', 'null']] }, 1, 0] } }
   } }
  ]);
- return rows[0] || { orders: 0, productSales: 0, deliveryFees: 0, costOfGoodsSold: 0, missingCostOrders: 0, unlinkedCustomers: 0 };
+ return rows[0] || { orders: 0, productSales: 0, discounts: 0, deliveryFees: 0, costOfGoodsSold: 0, missingCostOrders: 0, unlinkedCustomers: 0 };
 }
 async function physicalTotals(range) {
  const rows = await ShopSale.aggregate([
@@ -202,7 +202,7 @@ export async function getDashboardStats({ period = 'monthly', date, now = new Da
   summary: {
    onlineOrders: online.orders, onlineSales: online.productSales, deliveryFees: online.deliveryFees,
    physicalSales: physical.sales, physicalSubtotal: physical.subtotal, physicalSalesAfterDiscount: physical.productSales,
-   discounts: physical.discounts, returns: returns.refundTotal, returnRecords: returns.count,
+   discounts: online.discounts + physical.discounts, returns: returns.refundTotal, returnRecords: returns.count,
    unlinkedCustomers: online.unlinkedCustomers,
    netSales, costOfGoodsSold: missingCostRecords ? null : costOfGoodsSold, grossProfit: missingCostRecords ? null : netSales - costOfGoodsSold,
    missingCostRecords, customers: customer, inventory

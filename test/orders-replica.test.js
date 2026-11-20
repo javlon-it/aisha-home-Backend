@@ -61,6 +61,17 @@ test('real replica-set transaction, idempotency, inventory and customer isolatio
    const deniedText=await denied.text();assert.equal(deniedText.includes(body.phone),false);assert.equal(deniedText.includes(body.name),false);
    assert.equal(await Order.countDocuments(),4);assert.equal((await Variant.findById(rollbackVariant._id)).stock,1);
   }finally{await new Promise(resolve=>limitedServer.close(resolve));}
+  const discountedProduct=await Product.create({name:'Discounted synthetic towel',category:'Test',discountPercent:15});
+  const discountedVariant=await Variant.create({productId:discountedProduct._id,sku:'discount-'+randomUUID(),color:'Oq',size:'50x90',price:1001,stock:3});
+  for(const product of [(await (await fetch(base+'/catalog')).json()).products.find(item=>item.id===String(discountedProduct._id)),(await (await fetch(base+'/catalog/'+discountedProduct._id)).json()).product]){
+   assert.equal(product.discountPercent,15);assert.equal(product.variants[0].price,1001);assert.equal(product.variants[0].discountAmount,150);assert.equal(product.variants[0].finalPrice,851);assert.equal('stock' in product.variants[0],false);
+  }
+  const discountBody={...body,phone:'+998901234568',items:[{variantId:String(discountedVariant._id),expectedPrice:1001,expectedDiscountPercent:15,quantity:2}]};
+  const staleDiscount=await request({...discountBody,items:[{...discountBody.items[0],expectedDiscountPercent:10}]},randomUUID());assert.equal(staleDiscount.status,409);assert.equal((await Variant.findById(discountedVariant._id)).stock,3);
+  const discountedResponse=await request(discountBody,randomUUID());assert.equal(discountedResponse.status,201);const discountedOrder=await Order.findById((await discountedResponse.json()).orderId).lean();
+  assert.equal(discountedOrder.originalSubtotal,2002);assert.equal(discountedOrder.discountTotal,300);assert.equal(discountedOrder.subtotal,1702);assert.equal(discountedOrder.total,1702);
+  assert.deepEqual({originalPrice:discountedOrder.items[0].originalPrice,discountPercent:discountedOrder.items[0].discountPercent,discountAmount:discountedOrder.items[0].discountAmount,price:discountedOrder.items[0].price},{originalPrice:1001,discountPercent:15,discountAmount:150,price:851});
+  assert.equal((await Variant.findById(discountedVariant._id)).stock,1);
   assert.equal((await fetch(base+'/health/ready')).status,200);
   await mongoose.disconnect();
   assert.equal((await fetch(base+'/health/live')).status,200);

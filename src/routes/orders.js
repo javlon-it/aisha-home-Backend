@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import {createHash,randomBytes} from 'node:crypto';
 import {Customer,Order,Product,Variant} from '../models/index.js';
 import {legacyPhonePattern,normalizePhone} from '../utils/phone.js';
+import {discountedUnitPrice} from '../utils/pricing.js';
 
 export const ordersRouter=Router();
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -24,7 +25,7 @@ function clean(body){
  if(method==='delivery'&&(address.length<5||address.length>300))throw Error('To‘liq yetkazish manzilini kiriting.');
  if(body.consent!==true)throw Error('Ma’lumotlarni qayta ishlashga rozilikni belgilang.');
  const ids=new Set();
- const items=body.items.map(item=>{if(!validId(item.variantId)||!Number.isSafeInteger(item.expectedPrice)||item.expectedPrice<0||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>100||ids.has(item.variantId))throw Error('Mahsulot miqdori yoki varianti noto‘g‘ri.');ids.add(item.variantId);return {variantId:item.variantId,quantity:item.quantity,expectedPrice:item.expectedPrice}});
+ const items=body.items.map(item=>{if(!validId(item.variantId)||!Number.isSafeInteger(item.expectedPrice)||item.expectedPrice<0||('expectedDiscountPercent' in item&&(!Number.isInteger(item.expectedDiscountPercent)||item.expectedDiscountPercent<0||item.expectedDiscountPercent>100))||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>100||ids.has(item.variantId))throw Error('Mahsulot yoki chegirma ma’lumotini tekshiring.');ids.add(item.variantId);return {variantId:item.variantId,quantity:item.quantity,expectedPrice:item.expectedPrice,...('expectedDiscountPercent' in item?{expectedDiscountPercent:item.expectedDiscountPercent}:{})}});
  return {name,phone,phoneKey,method,address:method==='delivery'?address:'',items};
 }
 ordersRouter.use((req,res,next)=>{if(mongoose.connection.readyState!==1)return fail(res,503,'DATABASE_UNAVAILABLE','Ma’lumotlar bazasiga ulanib bo‘lmadi.');next()});
@@ -43,7 +44,7 @@ ordersRouter.post('/',async(req,res,next)=>{
   await session.withTransaction(async()=>{
    const found=await Order.findOne({ownerHash,requestId:key}).session(session).lean();
    if(found){if(found.requestHash!==requestHash){const e=Error('KEY_CONFLICT');throw e}result=found;return}
-   let subtotal=0;const items=[],reservationCosts=[];
+   let subtotal=0,originalSubtotal=0,discountTotal=0;const items=[],reservationCosts=[];
    for(const item of data.items){
     const v=await Variant.findOne({_id:item.variantId,stock:{$gte:item.quantity}}).session(session).lean();
     if(!v){const e=Error('STOCK');throw e}
@@ -52,16 +53,19 @@ ordersRouter.post('/',async(req,res,next)=>{
     if(!product){const e=Error('STOCK');throw e}
     const updated=await Variant.updateOne({_id:v._id,stock:{$gte:item.quantity}},{$inc:{stock:-item.quantity}},{session});
     if(updated.modifiedCount!==1){const e=Error('STOCK');throw e}
-    if(!Number.isSafeInteger(v.price)||v.price<0||!Number.isSafeInteger(v.price*item.quantity))throw Error('PRICE');
-    subtotal+=v.price*item.quantity;
-    items.push({variantId:v._id,name:product.name,color:v.color,size:v.size,price:v.price,quantity:item.quantity});
+    const pricing=discountedUnitPrice(v.price,Number.isInteger(product.discountPercent)?product.discountPercent:0);
+    if(item.expectedDiscountPercent!==undefined&&item.expectedDiscountPercent!==pricing.discountPercent)throw Error('PRICE_CHANGED');
+    if(!Number.isSafeInteger(pricing.finalPrice*item.quantity)||!Number.isSafeInteger(v.price*item.quantity))throw Error('PRICE');
+    originalSubtotal+=v.price*item.quantity;discountTotal+=pricing.discountAmount*item.quantity;subtotal+=pricing.finalPrice*item.quantity;
+    if(!Number.isSafeInteger(originalSubtotal)||!Number.isSafeInteger(discountTotal)||!Number.isSafeInteger(subtotal))throw Error('PRICE');
+    items.push({variantId:v._id,name:product.name,color:v.color,size:v.size,price:pricing.finalPrice,originalPrice:v.price,discountPercent:pricing.discountPercent,discountAmount:pricing.discountAmount,quantity:item.quantity});
     reservationCosts.push({variantId:v._id,unitCost:v.averageCost??null});
    }
    const fee=data.method==='delivery'?null:0;
    if(fee!==null&&!Number.isSafeInteger(subtotal+fee))throw Error('PRICE');
    let customer=await Customer.findOne({phoneKey:data.phoneKey}).session(session);
    if(!customer){const legacy=await Customer.find({phoneKey:{$exists:false},phone:legacyPhonePattern(data.phoneKey)}).limit(2).session(session);if(legacy.length>1)throw Error('CUSTOMER_AMBIGUOUS');if(legacy.length===1)customer=legacy[0];else [customer]=await Customer.create([{name:data.name,phone:'+'+data.phoneKey,phoneKey:data.phoneKey}],{session})}
-   [result]=await Order.create([{ownerHash,requestId:key,requestHash,customerId:customer._id,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,feeConfirmed:data.method==='pickup'},subtotal,total:fee===null?null:subtotal+fee,inventoryReserved:true,paid:false}],{session});
+   [result]=await Order.create([{ownerHash,requestId:key,requestHash,customerId:customer._id,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,feeConfirmed:data.method==='pickup'},subtotal,originalSubtotal,discountTotal,total:fee===null?null:subtotal+fee,inventoryReserved:true,paid:false}],{session});
   });
   return res.status(201).json({orderId:String(result._id),demo:true});
  }catch(e){

@@ -7,9 +7,10 @@ catalogRouter.use((req,res,next)=>{
  if(mongoose.connection.readyState!==1)return res.status(503).json({error:{code:'DATABASE_UNAVAILABLE',message:'Mahsulotlar bazasiga ulanib bo‘lmadi. Keyinroq qayta urinib ko‘ring.'}});
  next();
 });
-const productFields='name category description imageUrl archived';
+const productFields='name category description imageUrl discountPercent archived';
 const variantFields='productId color size material gsm price stock';
-function publicProduct(p,variants){return {id:String(p._id),name:p.name,category:p.category,description:p.description,imageUrl:p.imageUrl,variants:variants.map(v=>({id:String(v._id),color:v.color,size:v.size,material:v.material,gsm:v.gsm,price:v.price,isAvailable:v.stock>0}))}}
+import {discountedUnitPrice} from '../utils/pricing.js';
+function publicProduct(p,variants){const discountPercent=Number.isInteger(p.discountPercent)?p.discountPercent:0;return {id:String(p._id),name:p.name,category:p.category,description:p.description,imageUrl:p.imageUrl,discountPercent,variants:variants.map(v=>({id:String(v._id),color:v.color,size:v.size,material:v.material,gsm:v.gsm,price:v.price,...discountedUnitPrice(v.price,discountPercent),isAvailable:v.stock>0}))}}
 catalogRouter.get('/',async(req,res,next)=>{try{
  const products=await Product.find({archived:{$ne:true}}).select(productFields).sort({name:1}).lean();
  const variants=await Variant.find({productId:{$in:products.map(p=>p._id)}}).select(variantFields).sort({color:1,size:1}).lean();
