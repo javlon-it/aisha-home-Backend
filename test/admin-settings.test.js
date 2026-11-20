@@ -5,9 +5,14 @@ import {randomBytes,createHash} from 'node:crypto';
 import {createApp} from '../src/app.js';
 import {AdminAccount,AdminSession,Shipping,Branch} from '../src/models/index.js';
 import {cleanSettings} from '../src/routes/admin-settings.js';
+import {publicSettingsView} from '../src/routes/store-settings.js';
 test('settings reject fee changes and invalid fields',()=>{
  assert.throws(()=>cleanSettings('shipping',{revision:0,deliveryArea:'',terms:'',fee:0}));
  assert.deepEqual(cleanSettings('shipping',{revision:0,deliveryArea:' Test ',terms:''}),{deliveryArea:'Test',terms:''});
+});
+test('public settings expose only approved editable fields',()=>{
+ assert.deepEqual(publicSettingsView('branch',{name:'AISHA',phone:'+99890',secret:'hidden'}),{name:'AISHA',address:'',phone:'+99890',email:'',hours:'',pickupAddress:''});
+ assert.deepEqual(publicSettingsView('shipping',{deliveryArea:'Toshkent',terms:'Kelishiladi',regions:[{fee:1}]}),{deliveryArea:'Toshkent',terms:'Kelishiladi'});
 });
 test('synthetic settings persist, require admin and prevent stale writes',{skip:process.env.SETTINGS_LOCAL_TEST!=='1'},async()=>{
  await mongoose.connect('mongodb://127.0.0.1:27028/aisha_settings_synthetic_'+Date.now(),{serverSelectionTimeoutMS:5000});
@@ -24,5 +29,6 @@ test('synthetic settings persist, require admin and prevent stale writes',{skip:
   await Shipping.create({regions:[{name:'Legacy',fee:123}],freeThreshold:456,__v:0});
   assert.equal((await req('shipping',{revision:0,deliveryArea:'Synthetic region',terms:'By agreement'})).status,200);
   const saved=await Shipping.findOne();assert.equal(saved.regions[0].fee,123);assert.equal(saved.freeThreshold,456);assert.equal(saved.terms,'By agreement');
+  const publicResponse=await fetch('http://127.0.0.1:'+server.address().port+'/api/store-settings');assert.equal(publicResponse.status,200);const publicSettings=await publicResponse.json();assert.equal(publicSettings.branch.pickupAddress,'Synthetic pickup');assert.equal(publicSettings.shipping.deliveryArea,'Synthetic region');assert.equal('regions' in publicSettings.shipping,false);
  }finally{await new Promise(r=>server.close(r));await mongoose.connection.dropDatabase();await mongoose.disconnect()}
 });

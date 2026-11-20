@@ -3,6 +3,7 @@ import cors from 'cors';
 import {healthRouter} from './routes/health.js';
 import {catalogRouter} from './routes/catalog.js';
 import {ordersRouter} from './routes/orders.js';
+import {storeSettingsRouter} from './routes/store-settings.js';
 import {createAdminRouter} from './routes/admin.js';
 import {errorHandler,notFound} from './middlewares/errors.js';
 import {createOrderRateLimit} from './middlewares/order-rate-limit.js';
@@ -26,5 +27,5 @@ export function createApp(env=process.env){
  app.post('/api/orders',createOrderRateLimit(env));
  app.use('/api/admin/products/:productId/image',imageUploadGuard(env,origins));
  app.use('/api/admin',express.raw({type:'application/octet-stream',limit:'4mb',verify:(req,res,buf)=>{if(req.imageExpectedHash&&createHash('sha256').update(buf).digest('hex')!==req.imageExpectedHash)throw Error('Invalid image signature');req.adminRawBody=Buffer.from(buf)}}));
- app.use(express.json({limit:'64kb',verify:(req,res,buf)=>{if(req.path.startsWith('/api/admin'))req.adminRawBody=Buffer.from(buf)}}));app.use('/api/admin',createAdminRouter({origins,production:app.locals.production,env}));app.use('/api/health',healthRouter);app.use('/api/catalog',catalogRouter);app.use('/api/orders',ordersRouter);app.use(notFound);app.use(errorHandler);return app;
+ app.use(express.json({limit:'64kb',verify:(req,res,buf)=>{if(req.path.startsWith('/api/admin'))req.adminRawBody=Buffer.from(buf)}}));app.use('/api/admin',createAdminRouter({origins,production:app.locals.production,env}));app.use('/api/health',healthRouter);app.use('/api/catalog',catalogRouter);app.use('/api/store-settings',storeSettingsRouter);app.use('/api/orders',ordersRouter);app.use(notFound);app.use(errorHandler);return app;
 }

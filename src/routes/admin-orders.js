@@ -20,6 +20,10 @@ async function list(req,res,next){try{
 }catch(e){next(e)}}
 adminOrdersRouter.get('/orders',list);
 adminOrdersRouter.get('/orders/page/:page',list);
+adminOrdersRouter.get('/orders-summary',async(req,res,next)=>{try{
+ const newOrders=await Order.countDocuments({status:'Yangi'});
+ res.json({newOrders});
+}catch(e){next(e)}});
 adminOrdersRouter.get('/orders/:orderId',async(req,res,next)=>{try{
  if(!validId(req.params.orderId))return fail(res,404,'NOT_FOUND','Buyurtma topilmadi.');
  const order=await Order.findById(req.params.orderId).select('-ownerHash -requestId -requestHash').lean();if(!order)return fail(res,404,'NOT_FOUND','Buyurtma topilmadi.');res.json({order});

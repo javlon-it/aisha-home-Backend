@@ -14,6 +14,7 @@ test('health, CORS allowlist and errors',async()=>{
   const denied=await fetch(url+'/api/health',{headers:{Origin:'https://untrusted.invalid'}});assert.equal(denied.status,403);assert.equal(denied.headers.get('access-control-allow-origin'),null);assert.equal((await denied.json()).error.code,'CORS_ORIGIN_DENIED');
   const preflight=await fetch(url+'/api/health',{method:'OPTIONS',headers:{Origin:'http://localhost:5173','Access-Control-Request-Method':'GET'}});assert.equal(preflight.status,204);
   const missing=await fetch(url+'/api/unknown');assert.equal(missing.status,404);assert.equal((await missing.json()).error.code,'NOT_FOUND');
+  const settings=await fetch(url+'/api/store-settings');assert.equal(settings.status,503);assert.equal((await settings.json()).error.code,'DATABASE_UNAVAILABLE');
  } finally{await new Promise(r=>server.close(r))}
 });
 test('production CORS is closed by default and wildcard is invalid',()=>{
