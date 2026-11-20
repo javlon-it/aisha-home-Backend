@@ -31,4 +31,12 @@ Bekor qilish va qoldiqni qaytarish bir MongoDB tranzaksiyasida bajariladi; takro
 
 Server boshlanganda va ishlayotgan paytda har daqiqada 24 soatdan eski `Yangi` buyurtmalar tekshiriladi. Render Free uxlab qolganida jarayon ishlamaydi; uyg‘ongach muddati o‘tganlarni qayta ko‘rib chiqadi. Shuning uchun 24 soatning aynan o‘zida bekor qilish uchun tashqi, ishonchli jadval yoki doim ishlaydigan servis kerak; bu hali sozlanmagan. Qaytarib bo‘lmaydigan eski buyurtma avtomatik yakunlanmaydi, worker xato sonini loglaydi. Production ma’lumotlaridagi eski rezervlar va ishlatish huquqlari deploydan avval alohida baholansin.
 
+## Do‘kondagi savdo va mijoz tarixi
+
+Admin autentifikatsiyasi va imzolangan proxy ortida `POST /api/admin/sales` savdoni yaratadi, `GET /api/admin/sales` oxirgi 100 ta savdoni qaytaradi. Yaratishda majburiy `Idempotency-Key`, mijoz ismi va telefoni, `cash` yoki `card`, so‘mda individual chegirma va kamida bitta variant talab qilinadi. To‘lov usuli faqat qayd qilinadi: bu yerda karta to‘lovi yoki fiskal chek integratsiyasi yo‘q. Server narxni qayta tekshiradi; chegirma mahsulotlar summasidan oshmaydi.
+
+Savdo, mijozga bog‘lanish va qoldiq kamayishi bir replica-set tranzaksiyasida bajariladi. Bir kalit bilan takroriy ayni so‘rov bitta savdo qaytaradi; boshqa ma’lumot bilan ayni kalit 409. Alohida yangi kalitlar alohida savdo sifatida qabul qilinadi. Har savdoda mahsulot nomi, SKU, variant, miqdor, sotuv narxi, tannarx, chegirma va yakuniy summa snapshot sifatida saqlanadi. Tannarxi noma’lum variantni sotish rad etiladi. Mijozning telefon raqami normallashtirilib, savdolar mijoz ID’siga bog‘lanadi. Bitta eski mos mijoz qayta ishlatiladi; bir nechta eski mijoz bir telefonga mos kelsa, avtomatik birlashtirish o‘rniga xato qaytariladi. CRM interfeysi hali yaratilmagan.
+
+Mijoz `phoneKey` maydoni uchun sparse unique indeks va savdo kaliti uchun unique indeks kerak. Mavjud production mijozlari va indeks ruxsatlari deploydan oldin alohida tekshirilsin; bu kod production ma’lumotlarini ko‘chirmaydi yoki tozalab bermaydi. Mahalliy integratsiyalar faqat alohida sintetik bazalarda `ADMIN_SALE_TEST_MONGO` (replica set) va `ADMIN_SALE_STANDALONE_MONGO` (standalone) bilan ishlatiladi.
+
 Mahalliy ishga tushirish: yuqoridagi README.md. Testlar: npm.cmd test; real replica set integratsiyasini ORDER_REPLICA_TEST=1, standalone testini ORDER_STANDALONE_TEST=1 bilan alohida mahalliy test serverlarida bajaring.
