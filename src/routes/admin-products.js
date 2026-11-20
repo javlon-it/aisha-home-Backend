@@ -20,16 +20,17 @@ adminProductsRouter.get('/products',async(req,res,next)=>{try{
 }catch(e){next(e)}});
 
 adminProductsRouter.post('/products',async(req,res,next)=>{try{
- const name=text(req.body?.name,120),category=text(req.body?.category,100),description=typeof req.body?.description==='string'?req.body.description.trim():null;
- if(!name||!category||description===null||description.length>2000)return fail(res,400,'INVALID_PRODUCT','Mahsulot ma’lumotlarini tekshiring.');
- const product=await Product.create({name,category,description,archived:false});res.status(201).json({product});
+ const name=text(req.body?.name,120),category=text(req.body?.category,100),description=typeof req.body?.description==='string'?req.body.description.trim():null,discountPercent=req.body?.discountPercent??0;
+ if(!name||!category||description===null||description.length>2000||!Number.isSafeInteger(discountPercent)||discountPercent<0||discountPercent>100)return fail(res,400,'INVALID_PRODUCT','Mahsulot ma’lumotlarini tekshiring.');
+ const product=await Product.create({name,category,description,discountPercent,archived:false});res.status(201).json({product});
 }catch(e){next(e)}});
 
 adminProductsRouter.patch('/products/:productId',async(req,res,next)=>{try{
  if(!id(req.params.productId))return fail(res,404,'NOT_FOUND','Mahsulot topilmadi.');
- const name=text(req.body?.name,120),category=text(req.body?.category,100),description=typeof req.body?.description==='string'?req.body.description.trim():null;
- if(!name||!category||description===null||description.length>2000)return fail(res,400,'INVALID_PRODUCT','Mahsulot ma’lumotlarini tekshiring.');
- const product=await Product.findOneAndUpdate({_id:req.params.productId,archived:{$ne:true}},{$set:{name,category,description}},{new:true,runValidators:true});
+ const name=text(req.body?.name,120),category=text(req.body?.category,100),description=typeof req.body?.description==='string'?req.body.description.trim():null,discountPercent=req.body?.discountPercent;
+ if(!name||!category||description===null||description.length>2000||(discountPercent!==undefined&&(!Number.isSafeInteger(discountPercent)||discountPercent<0||discountPercent>100)))return fail(res,400,'INVALID_PRODUCT','Mahsulot ma’lumotlarini tekshiring.');
+ const update={name,category,description};if(discountPercent!==undefined)update.discountPercent=discountPercent;
+ const product=await Product.findOneAndUpdate({_id:req.params.productId,archived:{$ne:true}},{$set:update},{new:true,runValidators:true});
  if(!product)return fail(res,404,'NOT_FOUND','Mahsulot topilmadi.');res.json({product});
 }catch(e){next(e)}});
 

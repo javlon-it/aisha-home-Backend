@@ -22,8 +22,9 @@ test('admin product, receipt and image flow with isolated replica set and synthe
  try{
   assert.equal((await req('/api/admin/products')).status,401);
   let r=await req('/api/admin/login',{method:'POST',body:{username:user,password}});assert.equal(r.status,200);const cookie=r.headers.get('set-cookie').split(';')[0];
-  r=await req('/api/admin/products',{method:'POST',cookie,body:{name:'Synthetic',category:'Test',description:'Demo'}});assert.equal(r.status,201);const product=(await r.json()).product;
-  r=await req('/api/admin/products/'+product._id,{method:'PATCH',cookie,body:{name:'Updated',category:'Test',description:'New'}});assert.equal(r.status,200);
+  r=await req('/api/admin/products',{method:'POST',cookie,body:{name:'Synthetic',category:'Test',description:'Demo',discountPercent:12}});assert.equal(r.status,201);const product=(await r.json()).product;assert.equal(product.discountPercent,12);
+  r=await req('/api/admin/products/'+product._id,{method:'PATCH',cookie,body:{name:'Updated',category:'Test',description:'New',discountPercent:25}});assert.equal(r.status,200);assert.equal((await r.json()).product.discountPercent,25);
+  r=await req('/api/admin/products/'+product._id,{method:'PATCH',cookie,body:{name:'Bad discount',category:'Test',description:'New',discountPercent:101}});assert.equal(r.status,400);assert.equal((await Product.findById(product._id)).discountPercent,25);
   r=await req('/api/admin/products/'+product._id+'/variants',{method:'POST',cookie,body:{sku:'SKU-1',color:'Oq',size:'S',price:1200}});assert.equal(r.status,201);const variant=(await r.json()).variant;
   r=await req('/api/admin/variants/'+variant._id,{method:'PATCH',cookie,body:{sku:'SKU-1',color:'Oq',size:'S',price:1500}});assert.equal(r.status,200);
   const path='/api/admin/variants/'+variant._id+'/receipts',key=randomUUID(),body={quantity:10,unitCost:100,receivedAt:'2026-01-01'};

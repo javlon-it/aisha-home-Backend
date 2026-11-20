@@ -2,26 +2,18 @@ import {Router} from 'express';
 import mongoose from 'mongoose';
 import {createHash} from 'node:crypto';
 import {Customer,Product,ShopReturn,ShopSale,Variant} from '../models/index.js';
+import {legacyPhonePattern,normalizePhone} from '../utils/phone.js';
 
 export const adminSalesRouter=Router();
 const fail=(res,status,code,message)=>res.status(status).json({error:{code,message}});
-const problem=code=>Object.assign(new Error(code),{saleCode:code});
+const problem=(code,details)=>Object.assign(new Error(code),{saleCode:code,details});
 const text=(value,max)=>typeof value==='string'&&value.trim().length>0&&value.trim().length<=max?value.trim():null;
 const id=value=>typeof value==='string'&&/^[a-f0-9]{24}$/i.test(value);
-function normalizePhone(value){
- if(typeof value!=='string'||value.length>24||!/^\+?[0-9 ()-]+$/.test(value.trim()))return null;
- const digits=value.replace(/\D/g,'');if(digits.length<9||digits.length>15)return null;
- return digits.length===9?'998'+digits:digits;
-}
-function legacyPhonePattern(phoneKey){
- const local=phoneKey.startsWith('998')&&phoneKey.length===12, digits=local?phoneKey.slice(3):phoneKey, sep='[\\s()\\-]*';
- return new RegExp('^\\s*\\+?'+sep+(local?'(?:9'+sep+'9'+sep+'8'+sep+')?':'')+digits.split('').join(sep)+sep+'$');
-}
 function clean(body){
- const name=text(body?.name,100),phoneKey=normalizePhone(body?.phone),paymentMethod=body?.paymentMethod,discount=body?.discount;
- if(!name||!phoneKey||!['cash','card'].includes(paymentMethod)||!Number.isSafeInteger(discount)||discount<0||discount>1000000000||!Array.isArray(body?.items)||body.items.length<1||body.items.length>50)throw problem('INVALID_SALE');
+ const name=text(body?.name,100),phoneKey=normalizePhone(body?.phone),paymentMethod=body?.paymentMethod,individualDiscount=body?.individualDiscount??body?.discount??0,customerId=body?.customerId;
+ if(!name||!phoneKey||!['cash','card'].includes(paymentMethod)||!Number.isSafeInteger(individualDiscount)||individualDiscount<0||individualDiscount>1000000000||(customerId!==undefined&&!id(customerId))||!Array.isArray(body?.items)||body.items.length<1||body.items.length>50)throw problem('INVALID_SALE');
  const seen=new Set(),items=body.items.map(item=>{const variantId=typeof item?.variantId==='string'?item.variantId.toLowerCase():'';if(!id(variantId)||seen.has(variantId)||!Number.isSafeInteger(item.quantity)||item.quantity<1||item.quantity>1000000||!Number.isSafeInteger(item.expectedPrice)||item.expectedPrice<0||item.expectedPrice>1000000000)throw problem('INVALID_SALE');seen.add(variantId);return {variantId,quantity:item.quantity,expectedPrice:item.expectedPrice}});
- return {name,phone:'+'+phoneKey,phoneKey,paymentMethod,discount,items};
+ return {name,phone:'+'+phoneKey,phoneKey,paymentMethod,individualDiscount,...(customerId?{customerId:customerId.toLowerCase()}:{}),items};
 }
 
 adminSalesRouter.get('/sales',async(req,res,next)=>{try{
@@ -120,26 +112,36 @@ adminSalesRouter.post('/sales',async(req,res,next)=>{
     await session.withTransaction(async()=>{
      const existing=await ShopSale.findOne({requestId:key}).select('+requestHash').session(session).lean();
      if(existing){if(existing.requestHash!==requestHash)throw problem('KEY_CONFLICT');result={id:String(existing._id),duplicate:true};return}
-     let customer=await Customer.findOne({phoneKey:data.phoneKey}).session(session);
+     let customer=await Customer.findOne({phoneKey:data.phoneKey}).session(session),legacyCustomer=false;
      if(!customer){
       const legacy=await Customer.find({phoneKey:{$exists:false},phone:legacyPhonePattern(data.phoneKey)}).limit(2).session(session);
       if(legacy.length>1)throw problem('CUSTOMER_AMBIGUOUS');
-      if(legacy.length===1){customer=legacy[0];customer.phoneKey=data.phoneKey;await customer.save({session})}
-      else [customer]=await Customer.create([{name:data.name,phone:data.phone,phoneKey:data.phoneKey}],{session});
+      if(legacy.length===1){customer=legacy[0];legacyCustomer=true}
      }
-     let subtotal=0,totalCostScaled=0;const items=[];
+     if(customer){
+      if(data.customerId!==String(customer._id))throw problem('CUSTOMER_CONFIRMATION_REQUIRED',{id:String(customer._id),name:customer.name,phone:customer.phone});
+      if(legacyCustomer){customer.phoneKey=data.phoneKey;await customer.save({session})}
+     }else{
+      if(data.customerId)throw problem('CUSTOMER_SELECTION_INVALID');
+      [customer]=await Customer.create([{name:data.name,phone:data.phone,phoneKey:data.phoneKey}],{session});
+     }
+     let subtotal=0,totalCostScaled=0,generalDiscount=0;const items=[];
      for(const item of data.items){
       const variant=await Variant.findById(item.variantId).session(session);if(!variant||!Number.isSafeInteger(variant.stock)||variant.stock<item.quantity)throw problem('STOCK_UNAVAILABLE');
       const product=await Product.findOne({_id:variant.productId,archived:{$ne:true}}).session(session);if(!product)throw problem('STOCK_UNAVAILABLE');
       if(variant.price!==item.expectedPrice)throw problem('PRICE_CHANGED');
+      if(!Number.isSafeInteger(variant.price)||variant.price<0)throw problem('INVALID_SALE');
       if(typeof variant.averageCost!=='number'||!Number.isFinite(variant.averageCost)||variant.averageCost<0)throw problem('COST_REQUIRED');
-      const line=variant.price*item.quantity,unitCostScaled=Math.round(variant.averageCost*10000),costScaled=unitCostScaled*item.quantity;
-      if(!Number.isSafeInteger(line)||!Number.isSafeInteger(subtotal+line)||!Number.isSafeInteger(unitCostScaled)||!Number.isSafeInteger(costScaled)||!Number.isSafeInteger(totalCostScaled+costScaled))throw problem('INVALID_SALE');
+      const productDiscountPercent=product.discountPercent??0;
+      if(!Number.isSafeInteger(productDiscountPercent)||productDiscountPercent<0||productDiscountPercent>100)throw problem('INVALID_SALE');
+      const line=variant.price*item.quantity,unitCostScaled=Math.round(variant.averageCost*10000),costScaled=unitCostScaled*item.quantity,unitDiscount=Number((BigInt(variant.price)*BigInt(productDiscountPercent)+50n)/100n),lineGeneralDiscount=unitDiscount*item.quantity;
+      if(!Number.isSafeInteger(line)||!Number.isSafeInteger(subtotal+line)||!Number.isSafeInteger(unitCostScaled)||!Number.isSafeInteger(costScaled)||!Number.isSafeInteger(totalCostScaled+costScaled)||!Number.isSafeInteger(lineGeneralDiscount)||!Number.isSafeInteger(generalDiscount+lineGeneralDiscount))throw problem('INVALID_SALE');
       const updated=await Variant.updateOne({_id:variant._id,stock:{$gte:item.quantity}},{$inc:{stock:-item.quantity}},{session});if(updated.modifiedCount!==1)throw problem('STOCK_UNAVAILABLE');
-      subtotal+=line;totalCostScaled+=costScaled;items.push({variantId:variant._id,name:product.name,sku:variant.sku,color:variant.color,size:variant.size,quantity:item.quantity,unitPrice:variant.price,unitCost:unitCostScaled/10000});
+      subtotal+=line;totalCostScaled+=costScaled;generalDiscount+=lineGeneralDiscount;items.push({variantId:variant._id,name:product.name,sku:variant.sku,color:variant.color,size:variant.size,quantity:item.quantity,unitPrice:variant.price,unitCost:unitCostScaled/10000,productDiscountPercent});
      }
-     if(data.discount>subtotal)throw problem('INVALID_DISCOUNT');
-     [result]=await ShopSale.create([{requestId:key,requestHash,customerId:customer._id,customerSnapshot:{name:data.name,phone:data.phone},paymentMethod:data.paymentMethod,items,subtotal,discount:data.discount,total:subtotal-data.discount,totalCost:totalCostScaled/10000}],{session});
+     if(data.individualDiscount>subtotal||generalDiscount>subtotal)throw problem('INVALID_DISCOUNT');
+     const discount=Math.max(generalDiscount,data.individualDiscount),discountSource=discount===0?'none':generalDiscount===data.individualDiscount?'equal':generalDiscount>data.individualDiscount?'product':'individual';
+     [result]=await ShopSale.create([{requestId:key,requestHash,customerId:customer._id,customerSnapshot:{name:customer.name,phone:customer.phone},paymentMethod:data.paymentMethod,items,subtotal,generalDiscount,individualDiscount:data.individualDiscount,discountSource,discount,total:subtotal-discount,totalCost:totalCostScaled/10000}],{session});
      result={id:String(result._id),duplicate:false};
     });
     return res.status(result.duplicate?200:201).json({saleId:result.id,duplicate:result.duplicate});
@@ -152,7 +154,8 @@ adminSalesRouter.post('/sales',async(req,res,next)=>{
    }finally{await session.endSession()}
   }
  }catch(e){
-  const messages={KEY_CONFLICT:'Savdo kaliti boshqa ma’lumot bilan ishlatilgan.',CUSTOMER_AMBIGUOUS:'Telefon raqamiga bir nechta eski mijoz mos keldi; ma’lumotlarni tekshiring.',CONCURRENT_RETRY:'Savdo band, ayni amalni qayta urinib ko‘ring.',STOCK_UNAVAILABLE:'Mahsulot qoldig‘i yetarli emas yoki variant mavjud emas.',PRICE_CHANGED:'Mahsulot narxi o‘zgardi. Ro‘yxatni yangilang.',COST_REQUIRED:'Variant tannarxi aniqlanmagan; avval ombor ma’lumotlarini to‘ldiring.',INVALID_DISCOUNT:'Chegirma mahsulotlar summasidan oshmasin.',INVALID_SALE:'Savdo ma’lumotlarini tekshiring.'};
+   const messages={KEY_CONFLICT:'Savdo kaliti boshqa ma’lumot bilan ishlatilgan.',CUSTOMER_AMBIGUOUS:'Telefon raqamiga bir nechta eski mijoz mos keldi; ma’lumotlarni tekshiring.',CUSTOMER_CONFIRMATION_REQUIRED:'Bu telefon raqami mavjud mijoz profiliga mos. Savdoni ulashdan oldin profilni tasdiqlang.',CUSTOMER_SELECTION_INVALID:'Tanlangan mijoz profili telefon raqamiga mos emas.',CONCURRENT_RETRY:'Savdo band, ayni amalni qayta urinib ko‘ring.',STOCK_UNAVAILABLE:'Mahsulot qoldig‘i yetarli emas yoki variant mavjud emas.',PRICE_CHANGED:'Mahsulot narxi o‘zgardi. Ro‘yxatni yangilang.',COST_REQUIRED:'Variant tannarxi aniqlanmagan; avval ombor ma’lumotlarini to‘ldiring.',INVALID_DISCOUNT:'Chegirma mahsulotlar summasidan oshmasin.',INVALID_SALE:'Savdo ma’lumotlarini tekshiring.'};
+   if(e.saleCode==='CUSTOMER_CONFIRMATION_REQUIRED')return res.status(409).json({error:{code:e.saleCode,message:messages[e.saleCode]},customer:e.details});
   if(e.saleCode)return fail(res,e.saleCode==='INVALID_SALE'||e.saleCode==='INVALID_DISCOUNT'?400:409,e.saleCode,messages[e.saleCode]);
   if(e.code===20||/Transaction numbers are only allowed|replica set/i.test(e.message||''))return fail(res,503,'TRANSACTIONS_UNAVAILABLE','Ombor tranzaksiyasi vaqtincha mavjud emas.');
   next(e);
