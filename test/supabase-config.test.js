@@ -40,8 +40,8 @@ test('actual SDK HTTP errors produce only safe status and classification',async(
 
 test('startup listens before the Supabase check and does not await it',()=>{
  const events=[];const source=readFileSync(new URL('../server.js',import.meta.url),'utf8').split(/\r?\n/).filter(line=>!line.startsWith('import ')).join('\n');
- const context={process:{env:{PORT:'5000'}},console:{log:()=>events.push('log'),error:()=>{}},setTimeout,connectDatabase:async()=>{},createSupabaseClient:()=>({}),reportSupabaseConnection:()=>{events.push('check');return new Promise(()=>{})},createApp:()=>({listen:(port,host,callback)=>{events.push('listen');callback();events.push('listen-returned')}})};
- runInNewContext(source,context);assert.deepEqual(events,['listen','log','check','listen-returned']);
+ const context={process:{env:{PORT:'5000'}},console:{log:()=>events.push('log'),error:()=>{}},setTimeout,connectDatabase:async()=>{},startOrderExpiryWorker:()=>events.push('worker'),createSupabaseClient:()=>({}),reportSupabaseConnection:()=>{events.push('check');return new Promise(()=>{})},createApp:()=>({listen:(port,host,callback)=>{events.push('listen');callback();events.push('listen-returned')}})};
+ runInNewContext(source,context);assert.deepEqual(events,['listen','log','worker','check','listen-returned']);
 });
 
 test('synthetic Storage HTTP responses exercise SDK upload and removal',async()=>{

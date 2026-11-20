@@ -5,8 +5,9 @@ const product = schema({ name: { type: String, required: true }, category: Strin
 const variant = schema({ productId: { type: Schema.Types.ObjectId, ref: 'Product', required: true }, sku: { type: String, required: true, unique: true }, color: { type: String, required: true }, size: { type: String, required: true }, material: String, gsm: String, price: { type: Number, required: true, min: 0 }, stock: { type: Number, required: true, min: 0 }, averageCost:{type:Number,default:null,min:0} });
 variant.index({ productId: 1, color: 1, size: 1 }, { unique: true });
 const customer = schema({ name: { type: String, required: true }, phone: { type: String, required: true } });
-const order = schema({ ownerHash: { type: String, required: true }, requestId: { type: String, required: true }, requestHash: String, customerSnapshot: Schema.Types.Mixed, subtotal: Number, status: String, items: [{ variantId: Schema.Types.ObjectId, name: String, color: String, size: String, price: Number, quantity: Number }], shippingSnapshot: Schema.Types.Mixed, total: Number, inventoryReserved: Boolean, paid: Boolean });
+const order = schema({ ownerHash: { type: String, required: true }, requestId: { type: String, required: true }, requestHash: String, customerSnapshot: Schema.Types.Mixed, subtotal: Number, status: String, items: [{ variantId: Schema.Types.ObjectId, name: String, color: String, size: String, price: Number, quantity: Number }], reservationCosts:{type:[{variantId:Schema.Types.ObjectId,unitCost:Number}],select:false,default:undefined}, shippingSnapshot: Schema.Types.Mixed, total: Number, inventoryReserved: Boolean, paid: Boolean, confirmedAt:Date, cancelledAt:Date, cancellationReason:String });
 order.index({ ownerHash: 1, requestId: 1 }, { unique: true });
+order.index({ status: 1, createdAt: 1 });
 const inquiry = schema({ ownerHash: String, requestId: String, productId: Schema.Types.ObjectId, variantId: Schema.Types.ObjectId, status: String, orderId: Schema.Types.ObjectId });
 inquiry.index({ ownerHash: 1, requestId: 1 }, { unique: true });
 const note = schema({ customerId: { type: Schema.Types.ObjectId, ref: 'Customer' }, text: String });

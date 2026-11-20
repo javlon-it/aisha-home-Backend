@@ -5,6 +5,7 @@ import {isIP} from 'node:net';
 import mongoose from 'mongoose';
 import {AdminAccount,AdminSession,AdminLoginLimit,AdminProxyNonce} from '../models/index.js';
 import {adminProductsRouter} from './admin-products.js';
+import {adminOrdersRouter} from './admin-orders.js';
 
 const scrypt=promisify(scryptCallback);
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -76,5 +77,6 @@ export function createAdminRouter({origins,production,env={}}){
  r.get('/session',(req,res)=>res.json({authenticated:true,role:'admin',expiresAt:req.adminSession.expiresAt}));
  r.post('/logout',async(req,res,next)=>{try{await AdminSession.deleteOne({_id:req.adminSession._id});res.clearCookie('aisha_admin_session',cookie);res.json({authenticated:false})}catch(e){next(e)}});
  r.use(adminProductsRouter);
+ r.use(adminOrdersRouter);
  return r;
 }

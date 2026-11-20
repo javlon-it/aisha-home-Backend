@@ -41,7 +41,7 @@ ordersRouter.post('/',async(req,res,next)=>{
   await session.withTransaction(async()=>{
    const found=await Order.findOne({ownerHash,requestId:key}).session(session).lean();
    if(found){if(found.requestHash!==requestHash){const e=Error('KEY_CONFLICT');throw e}result=found;return}
-   let subtotal=0;const items=[];
+   let subtotal=0;const items=[],reservationCosts=[];
    for(const item of data.items){
     const v=await Variant.findOne({_id:item.variantId,stock:{$gte:item.quantity}}).session(session).lean();
     if(!v){const e=Error('STOCK');throw e}
@@ -53,10 +53,11 @@ ordersRouter.post('/',async(req,res,next)=>{
     if(!Number.isSafeInteger(v.price)||v.price<0||!Number.isSafeInteger(v.price*item.quantity))throw Error('PRICE');
     subtotal+=v.price*item.quantity;
     items.push({variantId:v._id,name:product.name,color:v.color,size:v.size,price:v.price,quantity:item.quantity});
+    reservationCosts.push({variantId:v._id,unitCost:v.averageCost??null});
    }
    const fee=data.method==='delivery'?15000:0;
    if(!Number.isSafeInteger(subtotal+fee))throw Error('PRICE');
-   [result]=await Order.create([{ownerHash,requestId:key,requestHash,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,shippingSnapshot:{method:data.method,address:data.address,fee,demo:true},subtotal,total:subtotal+fee,inventoryReserved:true,paid:false}],{session});
+   [result]=await Order.create([{ownerHash,requestId:key,requestHash,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,demo:true},subtotal,total:subtotal+fee,inventoryReserved:true,paid:false}],{session});
   });
   return res.status(201).json({orderId:String(result._id),demo:true});
  }catch(e){
