@@ -6,6 +6,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const TASHKENT_OFFSET = 5 * 60 * 60 * 1000;
 const pad = value => String(value).padStart(2, '0');
 const civilKey = date => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+const utcMillis = (year, month, day = 1) => { const value = new Date(0); value.setUTCHours(0, 0, 0, 0); value.setUTCFullYear(year, month, day); return value.getTime(); };
 function localToday(now) {
  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
  const get = type => Number(parts.find(part => part.type === type)?.value);
@@ -14,22 +15,22 @@ function localToday(now) {
 function readCivilDate(value, now) {
  if (value === undefined) return localToday(now);
  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw Object.assign(new Error('INVALID_DATE'), { dashboardCode: 'INVALID_DATE' });
- const [year, month, day] = value.split('-').map(Number), check = new Date(Date.UTC(year, month - 1, day));
+ const [year, month, day] = value.split('-').map(Number), check = new Date(utcMillis(year, month - 1, day));
  if (check.getUTCFullYear() !== year || check.getUTCMonth() + 1 !== month || check.getUTCDate() !== day) throw Object.assign(new Error('INVALID_DATE'), { dashboardCode: 'INVALID_DATE' });
  return { year, month, day };
 }
-const shiftMonths = (date, count) => new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + count, 1));
+const shiftMonths = (date, count) => new Date(utcMillis(date.getUTCFullYear(), date.getUTCMonth() + count, 1));
 
 export function dashboardRange(period = 'monthly', date, now = new Date()) {
  if (!DASHBOARD_PERIODS.includes(period)) throw Object.assign(new Error('INVALID_PERIOD'), { dashboardCode: 'INVALID_PERIOD' });
  const civil = readCivilDate(date, now);
- let first = Date.UTC(civil.year, civil.month - 1, civil.day), next, unit, count;
+ let first = utcMillis(civil.year, civil.month - 1, civil.day), next, unit, count;
  if (period === 'daily') { next = first + DAY; unit = 'hour'; count = 24; }
  else if (period === 'weekly') {
   const weekday = new Date(first).getUTCDay(); first -= ((weekday + 6) % 7) * DAY; next = first + 7 * DAY; unit = 'day'; count = 7;
  } else if (period === 'monthly') {
-  first = Date.UTC(civil.year, civil.month - 1, 1); next = Date.UTC(civil.year, civil.month, 1); unit = 'day'; count = (next - first) / DAY;
- } else { first = Date.UTC(civil.year, 0, 1); next = Date.UTC(civil.year + 1, 0, 1); unit = 'month'; count = 12; }
+  first = utcMillis(civil.year, civil.month - 1, 1); next = utcMillis(civil.year, civil.month, 1); unit = 'day'; count = (next - first) / DAY;
+ } else { first = utcMillis(civil.year, 0, 1); next = utcMillis(civil.year + 1, 0, 1); unit = 'month'; count = 12; }
  const startCivil = new Date(first), endCivil = new Date(next), start = new Date(first - TASHKENT_OFFSET), end = new Date(next - TASHKENT_OFFSET);
  const buckets = Array.from({ length: count }, (_, index) => {
   const bucketDate = unit === 'hour' ? new Date(first + index * 60 * 60 * 1000) : unit === 'month' ? shiftMonths(startCivil, index) : new Date(first + index * DAY);
@@ -149,7 +150,7 @@ async function topProducts(range) {
  }
  return [...productRows.values()].map(row => {
   const returned = [...combined.values()].filter(item => variantProducts.get(String(item.variantId)) === row.productId).reduce((sum, item) => sum + (returnedByVariant.get(String(item.variantId)) || 0), 0);
-  return { ...row, returnedUnits: returned, units: Math.max(0, row.onlineUnits + row.physicalUnits - returned) };
+  return { ...row, returnedUnits: returned, units: row.onlineUnits + row.physicalUnits };
  }).sort((a, b) => b.units - a.units || a.name.localeCompare(b.name, 'uz')).slice(0, 10);
 }
 
@@ -179,7 +180,7 @@ async function inventorySnapshot() {
 }
 
 export async function getDashboardStats({ period = 'monthly', date, now = new Date() } = {}) {
- const range = dashboardRange(period, date, now), dateMatch = matchRange(range);
+ const range = dashboardRange(period, date, now);
  const [online, physical, returns, customer, inventory, onlineSeries, physicalSeries, returnSeries, products] = await Promise.all([
   onlineTotals(range), physicalTotals(range), returnTotals(range), customerCounts(range), inventorySnapshot(),
   seriesFor(Order, range, { match: { status: 'Yakunlangan' }, values: { project: { subtotal: 1 }, group: { online: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } } } } }),

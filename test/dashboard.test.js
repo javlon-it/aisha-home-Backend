@@ -35,7 +35,7 @@ test('dashboard aggregates completed synthetic sales, returns, customers and inv
   assert.equal(summary.returns,200);assert.equal(summary.returnRecords,1);assert.equal(summary.netSales,2700);
   assert.equal(summary.costOfGoodsSold,700);assert.equal(summary.grossProfit,2000);assert.equal(summary.missingCostRecords,0);
   assert.equal(summary.unlinkedCustomers,0);
-  assert.deepEqual(summary.customers,{new:1,repeat:1});assert.equal(result.topProducts[0].onlineUnits,1);assert.equal(result.topProducts[0].physicalUnits,2);assert.equal(result.topProducts[0].returnedUnits,1);assert.equal(result.topProducts[0].units,2);
+  assert.deepEqual(summary.customers,{new:1,repeat:1});assert.equal(result.topProducts[0].onlineUnits,1);assert.equal(result.topProducts[0].physicalUnits,2);assert.equal(result.topProducts[0].returnedUnits,1);assert.equal(result.topProducts[0].units,3);
   assert.equal(summary.inventory.variants,1);assert.equal(summary.inventory.units,3);assert.equal(summary.inventory.inventoryValue,600);
   assert.equal(result.series.find(bucket=>bucket.label==='00:00').netSales,2900);assert.equal(result.series.find(bucket=>bucket.label==='01:00').netSales,-200);
   await Order.create({ownerHash:'synthetic',requestId:'legacy-cost-unknown',subtotal:100,status:'Yakunlangan',items:[item],shippingSnapshot:{method:'pickup',fee:0},createdAt:start,updatedAt:start});

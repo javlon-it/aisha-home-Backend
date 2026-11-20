@@ -16,7 +16,7 @@ test('admin security with isolated MongoDB and signed synthetic proxy',{skip:!ur
  const stored=await hashPassword(password);assert.match(stored,/^scrypt\$131072\$8\$1\$/);await AdminAccount.create({singleton:'primary',username,passwordHash:stored,role:'admin'});
  const origin='https://admin.example',server=createApp({NODE_ENV:'production',CORS_ALLOWED_ORIGINS:origin,ADMIN_PROXY_SECRET:secret}).listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));const base='http://127.0.0.1:'+server.address().port;
  function signed(path,{method='GET',ip='192.0.2.1',cookie='',body,header=true,requestOrigin=origin,nonce=randomBytes(16).toString('hex'),forwarded}={}){
-  const raw=body?JSON.stringify(body):'',ts=String(Date.now());const message=[ts,nonce,ip,method,path,requestOrigin,digest(cookie),digest(raw)].join('\n');
+  const raw=body?JSON.stringify(body):'',ts=String(Date.now());const message=[ts,nonce,ip,method,path.split('?')[0],requestOrigin,digest(cookie),digest(raw)].join('\n');
   const headers={'X-Admin-Proxy-Time':ts,'X-Admin-Proxy-Nonce':nonce,'X-Admin-Proxy-IP':ip,'X-Admin-Proxy-Signature':createHmac('sha256',Buffer.from(secret,'hex')).update(message).digest('hex'),Origin:requestOrigin};
   if(header)headers['X-Admin-Request']='1';if(cookie)headers.Cookie=cookie;if(body)headers['Content-Type']='application/json';if(forwarded){headers['X-Forwarded-For']=forwarded;headers['X-Real-IP']=forwarded}
   return {method,headers,...(body?{body:raw}:{})};
@@ -25,11 +25,14 @@ test('admin security with isolated MongoDB and signed synthetic proxy',{skip:!ur
  try{
   const path='/api/admin/login';assert.equal((await fetch(base+path,{method:'POST',headers:{Origin:origin,'X-Admin-Request':'1','X-Forwarded-For':'192.0.2.8'}})).status,403);
   assert.equal((await req('/api/admin/session')).status,401);
+  assert.equal((await req('/api/admin/dashboard?period=daily&date=2026-11-20')).status,401,'dashboard requires an admin session');
   assert.equal((await req('/api/admin/session',{cookie:'aisha_demo_owner='+ 'a'.repeat(64)})).status,401);
   assert.equal((await req(path,{method:'POST',body:{username,password},header:false})).status,403);
   assert.equal((await req(path,{method:'POST',body:{username,password:'wrong'}})).status,401);
   let login=await req(path,{method:'POST',body:{username,password}});assert.equal(login.status,200);let cookie=login.headers.get('set-cookie').split(';')[0];assert.match(login.headers.get('set-cookie'),/HttpOnly/);assert.match(login.headers.get('set-cookie'),/Secure/);assert.match(login.headers.get('set-cookie'),/SameSite=Strict/);
   assert.equal((await req('/api/admin/session',{cookie})).status,200);
+  const dashboard=await req('/api/admin/dashboard?period=daily&date=2026-11-20',{cookie});assert.equal(dashboard.status,200);assert.equal((await dashboard.json()).range.timeZone,'Asia/Tashkent');
+  assert.equal((await req('/api/admin/dashboard?period=invalid&date=2026-11-20',{cookie})).status,400);
   assert.equal((await req('/api/admin/logout',{method:'POST',cookie})).status,200);assert.equal((await req('/api/admin/session',{cookie})).status,401);
   login=await req(path,{method:'POST',body:{username,password}});cookie=login.headers.get('set-cookie').split(';')[0];await AdminSession.updateMany({},{$set:{expiresAt:new Date(Date.now()-1000)}});assert.equal((await req('/api/admin/session',{cookie})).status,401);
   await AdminLoginLimit.deleteMany({});
