@@ -45,7 +45,7 @@ test('real replica-set transaction, idempotency, inventory and customer isolatio
   const invalid=await request({...body,items:[{variantId:String(v._id),expectedPrice:39000,quantity:-1}]},randomUUID());assert.equal(invalid.status,400);
   const fractional=await request({...body,items:[{variantId:String(v._id),expectedPrice:39000,quantity:1.5}]},randomUUID());assert.equal(fractional.status,400);
   const deliveryVariant=await Variant.create({productId:p._id,sku:'delivery-'+randomUUID(),color:'Bej',size:'70x140',price:89000,stock:1});
-  const delivered=await request({...body,method:'delivery',address:'Demo manzil 123',items:[{variantId:String(deliveryVariant._id),expectedPrice:89000,quantity:1,price:1}]},randomUUID());assert.equal(delivered.status,201);const deliveryId=(await delivered.json()).orderId;const delivery=await Order.findById(deliveryId).lean();assert.equal(delivery.total,104000);assert.equal(delivery.shippingSnapshot.fee,15000);assert.equal(delivery.items[0].price,89000);
+  const delivered=await request({...body,method:'delivery',address:'Demo manzil 123',items:[{variantId:String(deliveryVariant._id),expectedPrice:89000,quantity:1,price:1}]},randomUUID());assert.equal(delivered.status,201);const deliveryId=(await delivered.json()).orderId;const delivery=await Order.findById(deliveryId).lean();assert.equal(delivery.total,null);assert.equal(delivery.shippingSnapshot.fee,null);assert.equal(delivery.shippingSnapshot.feeConfirmed,false);assert.equal(delivery.items[0].price,89000);
   assert.equal(await Order.countDocuments(),3);
   // Real order + throttled retry use only this isolated synthetic database.
   assert.match(mongoose.connection.name,/^aisha_order_test_/);

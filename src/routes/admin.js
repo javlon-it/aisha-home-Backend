@@ -8,6 +8,7 @@ import {adminProductsRouter} from './admin-products.js';
 import {adminOrdersRouter} from './admin-orders.js';
 import {adminSalesRouter} from './admin-sales.js';
 import {adminCrmRouter} from './admin-crm.js';
+import {getDashboardStats} from '../services/dashboard.js';
 
 const scrypt=promisify(scryptCallback);
 const hash=value=>createHash('sha256').update(value).digest('hex');
@@ -80,6 +81,12 @@ export function createAdminRouter({origins,production,env={}}){
  r.post('/logout',async(req,res,next)=>{try{await AdminSession.deleteOne({_id:req.adminSession._id});res.clearCookie('aisha_admin_session',cookie);res.json({authenticated:false})}catch(e){next(e)}});
  r.use(adminProductsRouter);
  r.use(adminOrdersRouter);
+ r.get('/dashboard',async(req,res,next)=>{try{
+  const period=req.query.period===undefined?'monthly':req.query.period;
+  const date=req.query.date;
+  if(typeof period!=='string'||(date!==undefined&&typeof date!=='string'))return fail(res,400,'INVALID_RANGE','Davr va sanani tekshiring.');
+  res.set('Cache-Control','no-store').json(await getDashboardStats({period,date}));
+ }catch(error){if(['INVALID_DATE','INVALID_PERIOD'].includes(error.dashboardCode))return fail(res,400,error.dashboardCode,'Davr yoki sanani tekshiring.');next(error)}});
  r.use(adminSalesRouter);
  r.use(adminCrmRouter);
  return r;

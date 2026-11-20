@@ -15,6 +15,7 @@ export async function changeOrderStatus(id,status,{expiryCutoff}={}){
   if(order.status===status){result={id:String(order._id),status:order.status,unchanged:true};return}
   if(!expiryCutoff&&order.status==='Yangi'&&status!=='Bekor qilingan'&&order.createdAt&&order.createdAt.getTime()<=Date.now()-24*60*60*1000)throw error('ORDER_EXPIRED');
   if(!transitions[order.status]?.includes(status))throw error('INVALID_TRANSITION');
+  if(['Jarayonda','Yakunlangan'].includes(status)&&order.shippingSnapshot?.method==='delivery'&&(!Number.isSafeInteger(order.shippingSnapshot?.fee)||order.shippingSnapshot?.fee<0||order.shippingSnapshot?.feeConfirmed!==true))throw error('DELIVERY_FEE_REQUIRED');
   if(status==='Bekor qilingan'&&order.inventoryReserved===true){
    if(!Array.isArray(order.items)||!order.items.length)throw error('INVALID_RESERVATION');
    for(const item of order.items){
@@ -48,7 +49,7 @@ export async function updateDeliveryFee(id,fee){
   if(!order.shippingSnapshot||!['delivery','pickup'].includes(order.shippingSnapshot.method))throw error('INVALID_ORDER');
   if(order.shippingSnapshot.method==='pickup'&&fee!==0)throw error('PICKUP_FEE');
   if(!Number.isSafeInteger(order.subtotal)||order.subtotal<0||!Number.isSafeInteger(order.subtotal+fee))throw error('INVALID_ORDER');
-  order.shippingSnapshot={...order.shippingSnapshot,fee};order.total=order.subtotal+fee;
+  order.shippingSnapshot={...order.shippingSnapshot,fee,feeConfirmed:true};order.total=order.subtotal+fee;
   await order.save({session});result={id:String(order._id),fee,total:order.total};
  });return result}finally{await session.endSession()}
 }

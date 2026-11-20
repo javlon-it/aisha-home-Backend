@@ -8,6 +8,7 @@ const fail=(res,status,code,message)=>res.status(status).json({error:{code,messa
 function orderError(err,res,next){
  if(err.orderCode==='NOT_FOUND')return fail(res,404,'NOT_FOUND','Buyurtma topilmadi.');
  if(err.orderCode==='ORDER_EXPIRED')return fail(res,409,'ORDER_EXPIRED','Buyurtmani tasdiqlash muddati tugagan. U bekor qilinadi.');
+ if(err.orderCode==='DELIVERY_FEE_REQUIRED')return fail(res,409,'DELIVERY_FEE_REQUIRED','Yetkazish narxini mijoz bilan kelishib saqlang.');
  if(['INVALID_TRANSITION','INVALID_RESERVATION','VARIANT_MISSING','PICKUP_FEE','INVALID_ORDER'].includes(err.orderCode))return fail(res,409,err.orderCode,'Buyurtma yoki ombor holati amalni bajarishga ruxsat bermadi.');
  if(err.code===20||/Transaction numbers are only allowed|replica set/i.test(err.message||''))return fail(res,503,'TRANSACTIONS_UNAVAILABLE','Ombor tranzaksiyasi vaqtincha mavjud emas.');
  return next(err);

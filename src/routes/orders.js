@@ -57,11 +57,11 @@ ordersRouter.post('/',async(req,res,next)=>{
     items.push({variantId:v._id,name:product.name,color:v.color,size:v.size,price:v.price,quantity:item.quantity});
     reservationCosts.push({variantId:v._id,unitCost:v.averageCost??null});
    }
-   const fee=data.method==='delivery'?15000:0;
-   if(!Number.isSafeInteger(subtotal+fee))throw Error('PRICE');
+   const fee=data.method==='delivery'?null:0;
+   if(fee!==null&&!Number.isSafeInteger(subtotal+fee))throw Error('PRICE');
    let customer=await Customer.findOne({phoneKey:data.phoneKey}).session(session);
    if(!customer){const legacy=await Customer.find({phoneKey:{$exists:false},phone:legacyPhonePattern(data.phoneKey)}).limit(2).session(session);if(legacy.length>1)throw Error('CUSTOMER_AMBIGUOUS');if(legacy.length===1)customer=legacy[0];else [customer]=await Customer.create([{name:data.name,phone:'+'+data.phoneKey,phoneKey:data.phoneKey}],{session})}
-   [result]=await Order.create([{ownerHash,requestId:key,requestHash,customerId:customer._id,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,demo:true},subtotal,total:subtotal+fee,inventoryReserved:true,paid:false}],{session});
+   [result]=await Order.create([{ownerHash,requestId:key,requestHash,customerId:customer._id,status:'Yangi',customerSnapshot:{name:data.name,phone:data.phone},items,reservationCosts,shippingSnapshot:{method:data.method,address:data.address,fee,feeConfirmed:data.method==='pickup'},subtotal,total:fee===null?null:subtotal+fee,inventoryReserved:true,paid:false}],{session});
   });
   return res.status(201).json({orderId:String(result._id),demo:true});
  }catch(e){
