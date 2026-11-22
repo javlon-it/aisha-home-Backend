@@ -43,6 +43,12 @@ export function dashboardRange(period = 'monthly', date, now = new Date()) {
 }
 
 const matchRange = range => ({ createdAt: { $gte: range.start, $lt: range.end } });
+// Legacy completed orders have no completedAt: retain their existing createdAt attribution without writing an invented date.
+const onlineCompletedMatch = range => ({ status: 'Yakunlangan', $or: [
+ { completedAt: { $gte: range.start, $lt: range.end } },
+ { completedAt: null, createdAt: { $gte: range.start, $lt: range.end } }
+] });
+const onlineCompletionDate = { $ifNull: ['$completedAt', '$createdAt'] };
 const timeBucket = (field, range) => ({ $dateToString: { format: range.bucketFormat, date: field, timezone: TIME_ZONE } });
 const reservationCostExpr = item => ({ $let: {
  vars: { snapshot: { $arrayElemAt: [{ $filter: { input: { $ifNull: ['$reservationCosts', []] }, as: 'cost', cond: { $eq: ['$$cost.variantId', item] } } }, 0] } },
@@ -62,16 +68,33 @@ const validReturnCostExpr = { $allElementsTrue: [{ $map: { input: { $filter: { i
 
 async function onlineTotals(range) {
  const rows = await Order.aggregate([
-  { $match: { ...matchRange(range), status: 'Yakunlangan' } },
+  { $match: onlineCompletedMatch(range) },
   { $addFields: { costComplete: costCompleteExpr, knownCost: onlineCostExpr } },
   { $group: {
    _id: null, orders: { $sum: 1 }, productSales: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } }, discounts: { $sum: { $cond: [{ $isNumber: '$discountTotal' }, '$discountTotal', 0] } },
    deliveryFees: { $sum: { $cond: [{ $isNumber: '$shippingSnapshot.fee' }, '$shippingSnapshot.fee', 0] } },
    costOfGoodsSold: { $sum: '$knownCost' }, missingCostOrders: { $sum: { $cond: ['$costComplete', 0, 1] } },
+   legacyCompletionDateOrders: { $sum: { $cond: [{ $eq: [{ $ifNull: ['$completedAt', null] }, null] }, 1, 0] } },
+   unknownTotalOrders: { $sum: { $cond: [{ $isNumber: '$total' }, 0, 1] } },
    unlinkedCustomers: { $sum: { $cond: [{ $in: [{ $type: '$customerId' }, ['missing', 'null']] }, 1, 0] } }
   } }
  ]);
- return rows[0] || { orders: 0, productSales: 0, discounts: 0, deliveryFees: 0, costOfGoodsSold: 0, missingCostOrders: 0, unlinkedCustomers: 0 };
+ return rows[0] || { orders: 0, productSales: 0, discounts: 0, deliveryFees: 0, costOfGoodsSold: 0, missingCostOrders: 0, legacyCompletionDateOrders: 0, unknownTotalOrders: 0, unlinkedCustomers: 0 };
+}
+async function onlinePayments(range) {
+ const [received, unpaid, undatedPaidOrders] = await Promise.all([
+  Order.aggregate([{ $match: { paid: true, paidAt: { $gte: range.start, $lt: range.end } } }, { $group: { _id: null, amount: { $sum: { $cond: [{ $isNumber: '$total' }, '$total', 0] } } } }]),
+  Order.aggregate([{ $match: { ...onlineCompletedMatch(range), paid: { $ne: true } } }, { $group: { _id: null, amount: { $sum: { $cond: [{ $isNumber: '$total' }, '$total', 0] } } } }]),
+  Order.countDocuments({ paid: true, paidAt: null })
+ ]);
+ return { received: received[0]?.amount || 0, unpaid: unpaid[0]?.amount || 0, undatedPaidOrders };
+}
+async function onlineSalesSeries(range) {
+ return Order.aggregate([
+  { $match: onlineCompletedMatch(range) },
+  { $project: { bucket: timeBucket(onlineCompletionDate, range), subtotal: 1 } },
+  { $group: { _id: '$bucket', online: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } } } }
+ ]);
 }
 async function physicalTotals(range) {
  const rows = await ShopSale.aggregate([
@@ -108,9 +131,9 @@ async function customerCounts(range) {
  const periodMatch = matchRange(range);
  const [periodSales, periodOrders, allSales, allOrders] = await Promise.all([
   ShopSale.aggregate([{ $match: periodMatch }, { $group: { _id: '$customerId' } }]),
-  Order.aggregate([{ $match: { ...periodMatch, status: 'Yakunlangan', customerId: { $type: 'objectId' } } }, { $group: { _id: '$customerId' } }]),
+  Order.aggregate([{ $match: { ...onlineCompletedMatch(range), customerId: { $type: 'objectId' } } }, { $group: { _id: '$customerId' } }]),
   ShopSale.aggregate([{ $match: { customerId: { $type: 'objectId' } } }, { $group: { _id: '$customerId', firstAt: { $min: '$createdAt' } } }]),
-  Order.aggregate([{ $match: { status: 'Yakunlangan', customerId: { $type: 'objectId' } } }, { $group: { _id: '$customerId', firstAt: { $min: '$createdAt' } } }])
+  Order.aggregate([{ $match: { status: 'Yakunlangan', customerId: { $type: 'objectId' } } }, { $group: { _id: '$customerId', firstAt: { $min: onlineCompletionDate } } }])
  ]);
  const periodIds = new Set([...periodSales, ...periodOrders].filter(row => row._id).map(row => String(row._id)));
  if (!periodIds.size) return { new: 0, repeat: 0 };
@@ -130,7 +153,7 @@ async function customerCounts(range) {
 }
 
 async function topProducts(range) {
- const match = { ...matchRange(range), status: 'Yakunlangan' };
+ const match = onlineCompletedMatch(range);
  const [online, physical, returns] = await Promise.all([
   Order.aggregate([{ $match: match }, { $unwind: '$items' }, { $group: { _id: '$items.variantId', name: { $first: '$items.name' }, units: { $sum: '$items.quantity' } } }]),
   ShopSale.aggregate([{ $match: matchRange(range) }, { $unwind: '$items' }, { $group: { _id: '$items.variantId', name: { $first: '$items.name' }, units: { $sum: '$items.quantity' } } }]),
@@ -181,12 +204,12 @@ async function inventorySnapshot() {
 
 export async function getDashboardStats({ period = 'monthly', date, now = new Date() } = {}) {
  const range = dashboardRange(period, date, now);
- const [online, physical, returns, customer, inventory, onlineSeries, physicalSeries, returnSeries, products] = await Promise.all([
+ const [online, physical, returns, customer, inventory, onlineSeries, physicalSeries, returnSeries, products, payments] = await Promise.all([
   onlineTotals(range), physicalTotals(range), returnTotals(range), customerCounts(range), inventorySnapshot(),
-  seriesFor(Order, range, { match: { status: 'Yakunlangan' }, values: { project: { subtotal: 1 }, group: { online: { $sum: { $cond: [{ $isNumber: '$subtotal' }, '$subtotal', 0] } } } } }),
+  onlineSalesSeries(range),
   seriesFor(ShopSale, range, { values: { project: { total: 1 }, group: { physical: { $sum: { $cond: [{ $isNumber: '$total' }, '$total', 0] } } } } }),
   seriesFor(ShopReturn, range, { dateField: '$returnedAt', values: { project: { refundTotal: 1 }, group: { returns: { $sum: { $cond: [{ $isNumber: '$refundTotal' }, '$refundTotal', 0] } } } } }),
-  topProducts(range)
+  topProducts(range), onlinePayments(range)
  ]);
  const byBucket = (rows, field) => new Map(rows.map(row => [row._id, row[field] || 0]));
  const onlineByBucket = byBucket(onlineSeries, 'online'), physicalByBucket = byBucket(physicalSeries, 'physical'), returnsByBucket = byBucket(returnSeries, 'returns');
@@ -200,11 +223,12 @@ export async function getDashboardStats({ period = 'monthly', date, now = new Da
  return {
   range: { period, timeZone: range.timeZone, start: range.start.toISOString(), endExclusive: range.end.toISOString(), startDate: range.startDate, endDateExclusive: range.endDateExclusive },
   summary: {
-   onlineOrders: online.orders, onlineSales: online.productSales, deliveryFees: online.deliveryFees,
+   onlineOrders: online.orders, onlineSales: online.productSales, deliveryFees: online.deliveryFees, legacyCompletionDateOrders: online.legacyCompletionDateOrders, unknownTotalOrders: online.unknownTotalOrders,
    physicalSales: physical.sales, physicalSubtotal: physical.subtotal, physicalSalesAfterDiscount: physical.productSales,
    discounts: online.discounts + physical.discounts, returns: returns.refundTotal, returnRecords: returns.count,
    unlinkedCustomers: online.unlinkedCustomers,
-   netSales, costOfGoodsSold: missingCostRecords ? null : costOfGoodsSold, grossProfit: missingCostRecords ? null : netSales - costOfGoodsSold,
+   netSales, netProductSales: netSales, cashReceived: physical.productSales + payments.received - returns.refundTotal, unpaidAmount: payments.unpaid, undatedPaidOrders: payments.undatedPaidOrders,
+   costOfGoodsSold: missingCostRecords ? null : costOfGoodsSold, grossProfit: missingCostRecords ? null : netSales - costOfGoodsSold,
    missingCostRecords, customers: customer, inventory
   },
   topProducts: products, series

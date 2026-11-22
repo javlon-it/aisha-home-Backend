@@ -11,10 +11,11 @@ export async function changeOrderStatus(id,status,{expiryCutoff}={}){
  try{await session.withTransaction(async()=>{
   const order=await Order.findById(id).select('+reservationCosts').session(session);
   if(!order)throw error('NOT_FOUND');
-  if(expiryCutoff&&(order.status!=='Yangi'||!order.createdAt||order.createdAt>expiryCutoff)){result={skipped:true};return}
+  if(expiryCutoff&&(order.status!=='Yangi'||order.paid===true||!order.createdAt||order.createdAt>expiryCutoff)){result={skipped:true};return}
   if(order.status===status){result={id:String(order._id),status:order.status,unchanged:true};return}
-  if(!expiryCutoff&&order.status==='Yangi'&&status!=='Bekor qilingan'&&order.createdAt&&order.createdAt.getTime()<=Date.now()-24*60*60*1000)throw error('ORDER_EXPIRED');
+  if(!expiryCutoff&&order.status==='Yangi'&&order.paid!==true&&status!=='Bekor qilingan'&&order.createdAt&&order.createdAt.getTime()<=Date.now()-24*60*60*1000)throw error('ORDER_EXPIRED');
   if(!transitions[order.status]?.includes(status))throw error('INVALID_TRANSITION');
+  if(status==='Bekor qilingan'&&order.paid===true)throw error('PAYMENT_REFUND_REQUIRED');
   if(['Jarayonda','Yakunlangan'].includes(status)&&order.shippingSnapshot?.method==='delivery'&&(!Number.isSafeInteger(order.shippingSnapshot?.fee)||order.shippingSnapshot?.fee<0||order.shippingSnapshot?.feeConfirmed!==true))throw error('DELIVERY_FEE_REQUIRED');
   if(status==='Bekor qilingan'&&order.inventoryReserved===true){
    if(!Array.isArray(order.items)||!order.items.length)throw error('INVALID_RESERVATION');
@@ -34,7 +35,7 @@ export async function changeOrderStatus(id,status,{expiryCutoff}={}){
   }
   order.status=status;
   if(status==='Jarayonda')order.confirmedAt=new Date();
-  if(status==='Yakunlangan')order.inventoryReserved=false;
+  if(status==='Yakunlangan'){order.inventoryReserved=false;order.completedAt=new Date()}
   if(status==='Bekor qilingan'){order.cancelledAt=new Date();order.cancellationReason=expiryCutoff?'expired':'admin'}
   await order.save({session});result={id:String(order._id),status:order.status};
  });return result}finally{await session.endSession()}
@@ -46,6 +47,7 @@ export async function updateDeliveryFee(id,fee){
   const order=await Order.findById(id).session(session);if(!order)throw error('NOT_FOUND');
   if(!['Yangi','Jarayonda'].includes(order.status))throw error('INVALID_TRANSITION');
   if(order.status==='Yangi'&&order.createdAt&&order.createdAt.getTime()<=Date.now()-24*60*60*1000)throw error('ORDER_EXPIRED');
+  if(order.paid===true){if(order.shippingSnapshot?.fee===fee){result={id:String(order._id),fee,total:order.total,unchanged:true};return}throw error('PAYMENT_CONFIRMED')}
   if(!order.shippingSnapshot||!['delivery','pickup'].includes(order.shippingSnapshot.method))throw error('INVALID_ORDER');
   if(order.shippingSnapshot.method==='pickup'&&fee!==0)throw error('PICKUP_FEE');
   if(!Number.isSafeInteger(order.subtotal)||order.subtotal<0||!Number.isSafeInteger(order.subtotal+fee))throw error('INVALID_ORDER');
@@ -54,9 +56,25 @@ export async function updateDeliveryFee(id,fee){
  });return result}finally{await session.endSession()}
 }
 
+export async function confirmOrderPayment(id){
+ const session=await mongoose.startSession();let result;
+ try{await session.withTransaction(async()=>{
+  const order=await Order.findById(id).session(session);
+  if(!order)throw error('NOT_FOUND');
+  if(order.paid===true){result={id:String(order._id),paid:true,paidAt:order.paidAt??null,unchanged:true};return}
+  if(!['Yangi','Jarayonda','Yakunlangan'].includes(order.status))throw error('INVALID_TRANSITION');
+  if(order.status==='Yangi'&&order.createdAt&&order.createdAt.getTime()<=Date.now()-24*60*60*1000)throw error('ORDER_EXPIRED');
+  const shipping=order.shippingSnapshot,fee=shipping?.fee;
+  const feeFinal=shipping?.method==='pickup'&&fee===0||shipping?.method==='delivery'&&shipping.feeConfirmed===true;
+  if(!Number.isSafeInteger(order.subtotal)||order.subtotal<0||!Number.isSafeInteger(order.total)||order.total<0||!feeFinal||!Number.isSafeInteger(fee)||fee<0||order.total!==order.subtotal+fee)throw error('FINAL_TOTAL_REQUIRED');
+  order.paid=true;order.paidAt=new Date();await order.save({session});
+  result={id:String(order._id),paid:true,paidAt:order.paidAt,unchanged:false};
+ });return result}finally{await session.endSession()}
+}
+
 export async function expireUnconfirmedOrders({now=new Date(),limit=100,afterId}={}){
  const cutoff=new Date(now.getTime()-24*60*60*1000);
- const query={status:'Yangi',createdAt:{$lte:cutoff}};if(afterId)query._id={$gt:afterId};
+ const query={status:'Yangi',paid:{$ne:true},createdAt:{$lte:cutoff}};if(afterId)query._id={$gt:afterId};
  const orders=await Order.find(query).sort({_id:1}).select('_id').limit(limit).lean();
  let cancelled=0,failed=0;
  for(const order of orders){try{const result=await changeOrderStatus(order._id,'Bekor qilingan',{expiryCutoff:cutoff});if(!result.skipped&&!result.unchanged)cancelled++}catch{failed++}}

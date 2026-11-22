@@ -24,7 +24,7 @@ test('dashboard aggregates completed synthetic sales, returns, customers and inv
   const variant=await Variant.create({productId:product._id,sku:'DASH-'+Date.now(),color:'White',size:'Large',price:500,stock:3,averageCost:200});
   const item={variantId:variant._id,name:product.name,color:'White',size:'Large',price:1000,quantity:1};
   await Order.create({ownerHash:'synthetic',requestId:'repeat-old',customerId:customerRepeat._id,subtotal:1000,status:'Yakunlangan',items:[item],reservationCosts:[{variantId:variant._id,unitCost:500}],shippingSnapshot:{method:'pickup',fee:0},createdAt:before,updatedAt:before});
-  await Order.create({ownerHash:'synthetic',requestId:'online-done',customerId:customerRepeat._id,subtotal:2000,originalSubtotal:2500,discountTotal:500,status:'Yakunlangan',items:[{...item,quantity:1}],reservationCosts:[{variantId:variant._id,unitCost:500}],shippingSnapshot:{method:'delivery',fee:150,feeConfirmed:true},createdAt:start,updatedAt:start});
+  await Order.create({ownerHash:'synthetic',requestId:'online-done',customerId:customerRepeat._id,subtotal:2000,originalSubtotal:2500,discountTotal:500,total:2150,paid:true,paidAt:start,status:'Yakunlangan',items:[{...item,quantity:1}],reservationCosts:[{variantId:variant._id,unitCost:500}],shippingSnapshot:{method:'delivery',fee:150,feeConfirmed:true},createdAt:start,updatedAt:start});
   await Order.create({ownerHash:'synthetic',requestId:'unfinished',customerId:customerNew._id,subtotal:50000,status:'Jarayonda',items:[{...item,quantity:50}],reservationCosts:[{variantId:variant._id,unitCost:500}],createdAt:start,updatedAt:start});
   await Order.create({ownerHash:'synthetic',requestId:'cancelled',customerId:customerNew._id,subtotal:60000,status:'Bekor qilingan',items:[{...item,quantity:60}],reservationCosts:[{variantId:variant._id,unitCost:500}],createdAt:start,updatedAt:start});
   const sale=await ShopSale.create({requestId:'physical-done',requestHash:'synthetic',customerId:customerNew._id,paymentMethod:'cash',items:[{variantId:variant._id,name:product.name,sku:'DASH',color:'White',size:'Large',quantity:2,unitPrice:500,unitCost:200}],subtotal:1000,generalDiscount:100,individualDiscount:0,discountSource:'product',discount:100,total:900,totalCost:400,createdAt:start,updatedAt:start});
@@ -34,11 +34,12 @@ test('dashboard aggregates completed synthetic sales, returns, customers and inv
   assert.equal(summary.physicalSales,1);assert.equal(summary.physicalSalesAfterDiscount,900);assert.equal(summary.discounts,600);
   assert.equal(summary.returns,200);assert.equal(summary.returnRecords,1);assert.equal(summary.netSales,2700);
   assert.equal(summary.costOfGoodsSold,700);assert.equal(summary.grossProfit,2000);assert.equal(summary.missingCostRecords,0);
+  assert.equal(summary.netProductSales,2700);assert.equal(summary.cashReceived,2850);assert.equal(summary.unpaidAmount,0);assert.equal(summary.legacyCompletionDateOrders,1);assert.equal(summary.unknownTotalOrders,0);assert.equal(summary.undatedPaidOrders,0);
   assert.equal(summary.unlinkedCustomers,0);
   assert.deepEqual(summary.customers,{new:1,repeat:1});assert.equal(result.topProducts[0].onlineUnits,1);assert.equal(result.topProducts[0].physicalUnits,2);assert.equal(result.topProducts[0].returnedUnits,1);assert.equal(result.topProducts[0].units,3);
   assert.equal(summary.inventory.variants,1);assert.equal(summary.inventory.units,3);assert.equal(summary.inventory.inventoryValue,600);
   assert.equal(result.series.find(bucket=>bucket.label==='00:00').netSales,2900);assert.equal(result.series.find(bucket=>bucket.label==='01:00').netSales,-200);
   await Order.create({ownerHash:'synthetic',requestId:'legacy-cost-unknown',subtotal:100,status:'Yakunlangan',items:[item],shippingSnapshot:{method:'pickup',fee:0},createdAt:start,updatedAt:start});
-  const incomplete=await getDashboardStats({period:'daily',date:'2026-11-20'});assert.equal(incomplete.summary.costOfGoodsSold,null);assert.equal(incomplete.summary.grossProfit,null);assert.equal(incomplete.summary.missingCostRecords,1);assert.equal(incomplete.summary.unlinkedCustomers,1);
+  const incomplete=await getDashboardStats({period:'daily',date:'2026-11-20'});assert.equal(incomplete.summary.costOfGoodsSold,null);assert.equal(incomplete.summary.grossProfit,null);assert.equal(incomplete.summary.missingCostRecords,1);assert.equal(incomplete.summary.unknownTotalOrders,1);assert.equal(incomplete.summary.unlinkedCustomers,1);
  }finally{await mongoose.connection.dropDatabase();await mongoose.disconnect()}
 });
